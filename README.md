@@ -21,7 +21,7 @@ Clone the repository:
 
 ```sh
 git clone git@github.com:cgreening/simple-webpack-react-starter.git
-cd webpack-starter
+cd simple-webpack-react-starter
 npm install
 npm run dev
 Browse to http://localhost:8080
