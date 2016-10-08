@@ -21,7 +21,7 @@ module.exports = React.createClass({
   render: function () {
     return (
     <div>
-    <p>Here is some Content <b ref='serverResponse'>{ this.state.serverData || 'Click the button to hit the API' }</b></p>
+    <p>Here are some test Content <b ref='serverResponse'>{ this.state.serverData || 'Click the button to hit the API' }</b></p>
     <input ref='refreshButton' type='button' onClick={this.refreshData } value='Hit the server'></input>
     </div>
 	);
