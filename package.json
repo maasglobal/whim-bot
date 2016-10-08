@@ -8,7 +8,6 @@
     "dev-web": "webpack-dev-server --config ./webpack-dev.config.js --hot --progress --colors --content-base build", 
     "dev": "nodemon server/index.js --watch server & webpack-dev-server --config ./webpack-dev.config.js --hot --progress --colors --content-base build",
     "build": "rm build/*; webpack --config ./webpack-prod.config.js --progress --colors",
-    "preinstall": "rm build/*; webpack --config ./webpack-prod.config.js --progress --colors",
     "start": "node server/index.js",
     "test": "karma start",
     "testing": "karma start --single-run=false"
