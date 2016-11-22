@@ -105,10 +105,11 @@ intents.onDefault(function (session) {
       return;
     }
     var entities = session.message.entities;
-    if (entities && entities[0].geo) {
+    if (entities.length > 0 && entities[0].geo) {
       session.beginDialog('/location', entities[0].geo);
       return;
     }
+    session.endDialog('To schedule a ride, send a location');
   } else {
     session.endDialog('I am currently expecting to be called from Facebook Messenger');
   }
@@ -155,14 +156,11 @@ var dummyPlaces = {
 bot.dialog('/location', [
   function (session, fromLocation) {
     session.dialogData.fromLocation = fromLocation;
-    builder.Prompts.choice(session,
-      'Choose or send location to set the destination',
-      dummyPlaces
-    );
+    session.beginDialog('/destination', dummyPlaces);
   },
   function (session, results) {
     if (results.response) {
-      var toLocation = dummyPlaces[results.response.entity];
+      var toLocation = results.response;
       var fromLocation = session.dialogData.fromLocation;
       requests.routes(
         fromLocation, toLocation,
@@ -179,6 +177,35 @@ bot.dialog('/location', [
       // TODO: Continue based on the response
     }
     session.endDialog('Your ride is on the way...');
+  }
+]);
+
+bot.dialog('/destination', [
+  function (session, choices) {
+    session.dialogData.choices = choices;
+    builder.Prompts.choice(
+      session,
+      'Choose or send location to set the destination',
+      choices,
+      {
+        maxRetries: 0
+      }
+    );
+  },
+  function (session, results) {
+    if (results.response && results.response.entity) {
+      var choices = session.dialogData.choices;
+      session.endDialogWithResult({
+        response: choices[results.response.entity]
+      });
+    } else if (session.message.entities.length > 0 && session.message.entities[0].geo) {
+      session.endDialogWithResult({
+        response: session.message.entities[0].geo
+      });
+    } else {
+      session.send('Did not understand the sent location - please try again');
+      session.replaceDialog('/destination', session.dialogData.choices);
+    }
   }
 ]);
 
