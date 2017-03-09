@@ -1,19 +1,16 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <title>Whim Login</title>
   <script src="scripts.js"></script>
 </head>
-
 <body>
   <img src="whim.jpg"></img>
   <h1>Login to Whim</h1>
-  <form name="loginForm" action="/factor1" method="post">
+  <form name="loginForm" action="https://1gq96x3sg7.execute-api.eu-west-1.amazonaws.com/dev/factor1" method="get">
     <h2>Please enter your phone number:</h2>
     <input type="tel" name="phone">
-    <input type="button" value="Login" onclick="submitClicked()">
+    <input type="button" value="Login" onclick="submitNumberClicked()">
   </form>
 </body>
-
 </html>

@@ -1,76 +1,84 @@
-var restify = require('restify');
-var builder = require('botbuilder');
+/**
+ * Whim-Bot main handler
+ */
 
-var requests = require('./requests.js');
+const builder = require('botbuilder');
+const requests = require('./requests.js');
 
-var FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost';
-var FIRST_FACTOR_URL = FRONTEND_URL + '/static/factor1.html';
-var SECOND_FACTOR_URL = FRONTEND_URL + '/static/factor2.html';
+const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'http://localhost:8080';
+const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
+const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
 
-var server = restify.createServer();
-server.listen(process.env.port || process.env.PORT || 3978, function () {
-  console.log('%s listening to %s', server.name, server.url);
-});
-
-var connector = new builder.ChatConnector({
+const connector = new builder.ChatConnector({
   appId: process.env.MICROSOFT_APP_ID,
   appPassword: process.env.MICROSOFT_APP_PASSWORD
 });
 
-var bot = new builder.UniversalBot(connector);
+const bot = new builder.UniversalBot(connector);
+const listener = connector.listen();
+const intents = new builder.IntentDialog();
 
-server.post('/api/messages', connector.listen());
+// restify mock for lambda
+module.exports.listener = require('./serverless.js')(listener);
 
-server.post('/factor1', restify.bodyParser(), function (req, res, next) {
-  var splitBody = req.body.split('phone=');
-  if (splitBody.length < 2) {
-    return res.send(400, 'Request did not contain phone in the body');
-  }
-  var phone = splitBody[1];
+// 1st and 2nd factor auth
+module.exports.factors = (event, context, callback) => {
+  console.log(event);
+  if (event.query['phone'] && event.query['code'] && event.query['address']) {
+      
+  const code = event.query['code'];
+  var phone = event.query['phone'];
   phone = unescape(phone);
-
-  requests.requestCode(phone, function (error, response, body) {
-    var queryString = req.url.split('?')[1];
-    if (error || response.statusCode !== 200) {
-      // In case of errors, redirect back to the first factor page.
-      // TODO: Inform user about the errors.
-      return res.redirect(FIRST_FACTOR_URL + '?' + queryString, next);
-    }
-    res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
-  });
-});
-
-server.post('/factor2', restify.queryParser(), restify.bodyParser(), function (req, res, next) {
-  var splitBody = req.body.split('code=');
-  if (splitBody.length < 2) {
-    return res.send(400, 'Request did not contain code in the body');
-  }
-  var code = splitBody[1];
-  var phone = req.query.phone;
-
+  console.log('Logging in with', phone, code)
   requests.login(phone, code, function (error, response, body) {
-    var queryString = req.url.split('?')[1];
+    const retVal = {
+      statusCode: response.statusCode,
+      body: "",
+    };
     if (error || response.statusCode !== 200) {
-      return res.redirect(SECOND_FACTOR_URL + '?' + queryString, next);
+      return callback(null, retVal);
     }
-    var address = JSON.parse(req.query.address);
-    bot.beginDialog(address, '/persistUserData', body, function (error) {
-      var redirectUri = req.query.redirect_uri + '&authorization_code=' + phone;
-      res.redirect(redirectUri, next);
+    
+    bot.beginDialog(event.query['address'], '/persistUserData', body, function (error) {
+      retVal.statusCode = 200;
+      retVal.body = JSON.stringify({
+        phone: phone,
+        url: `${SECOND_FACTOR_URL}?&authorization_code=${phone}`
+      });
+      return callback(null, retVal);
     });
   });
-});
+
+  } else if (event.query['phone']) {
+    var phone = event.query['phone'];
+    phone = unescape(phone);
+    console.log('requesting code for', phone)
+
+    requests.requestCode(phone, function (error, response, body) {
+      const retVal = {
+        statusCode: response.statusCode,
+        body: "",
+      };
+      if (error || response.statusCode !== 200) {
+        return callback(null, retVal);
+      }
+      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
+      retVal.statusCode = 200;
+    
+      retVal.body = JSON.stringify({
+        phone: phone,
+        url: `${SECOND_FACTOR_URL}?phone=${phone}`
+      });
+      return callback(null, retVal);
+    });
+  }
+};
 
 bot.dialog('/persistUserData', function (session, data) {
   session.userData.user = data;
   session.endDialog();
 });
 
-server.get(/\/static\/?.*/, restify.serveStatic({
-  directory: __dirname
-}));
-
-var intents = new builder.IntentDialog();
 bot.dialog('/', intents);
 
 var handleAccountLinking = function (session) {
