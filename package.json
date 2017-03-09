@@ -1,0 +1,10 @@
+{
+  "name": "whim-bot",
+  "version": "0.0.1",
+  "main": "index.js",
+  "dependencies": {
+    "botbuilder": "^3.4.4",
+    "request": "^2.78.0",
+    "restify": "^4.2.0"
+  }
+}
