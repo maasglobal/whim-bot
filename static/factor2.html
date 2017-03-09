@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Whim Login</title>
+  <script src="scripts.js"></script>
+</head>
+
+<body>
+  <img src="whim.jpg"></img>
+  <h1>Login to Whim</h1>
+  <form name="loginForm" action="/factor2" method="post">
+    <h2>Please enter code received to given phone number:</h2>
+    <input type="number" inputmode="numeric" pattern="[0-9]*" name="code">
+    <input type="button" value="Login" onclick="submitClicked()">
+  </form>
+</body>
+
+</html>
