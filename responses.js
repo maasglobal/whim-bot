@@ -6,7 +6,7 @@ const factor1 = () => {
     <script src="scripts.js"></script>
   </head>
   <body>
-    <img src="whim.jpg"></img>
+    <img src="http://whimapp.com/wp-content/themes/maas-whim/dist/images/site-logo.png"></img>
     <h1>Login to Whim</h1>
     <form name="loginForm" action="https://1gq96x3sg7.execute-api.eu-west-1.amazonaws.com/dev/factor1" method="get">
       <h2>Please enter your phone number:</h2>
@@ -27,7 +27,7 @@ module.exports.factor2 = () => {
   <script src="scripts.js"></script>
 </head>
 <body>
-  <img src="whim.jpg"></img>
+  <img src="http://whimapp.com/wp-content/themes/maas-whim/dist/images/site-logo.png"></img>
   <h1>Login to Whim</h1>
   <form name="loginForm" action="https://1gq96x3sg7.execute-api.eu-west-1.amazonaws.com/dev/factor2" method="get">
     <h2>Please enter code received to given phone number:</h2>
