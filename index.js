@@ -1,3 +1,4 @@
+'use strict';
 /**
  * Whim-Bot main handler
  */
@@ -5,7 +6,7 @@
 const builder = require('botbuilder');
 const requests = require('./requests.js');
 
-const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'http://localhost:8080';
+const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
 const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
 
@@ -19,60 +20,99 @@ const listener = connector.listen();
 const intents = new builder.IntentDialog();
 
 // restify mock for lambda
-module.exports.listener = require('./serverless.js')(listener);
+module.exports.listener = (event, context, callback) => {
+  console.log('Mock Listener handler called');
+  const mock = require('./serverless.js')(listener);
+  return mock.post(event, context, callback);
+}
 
-console.log('Listener is', module.exports.listener.post);
+const concatenateQueryString = params => {
+  const ret = [];
+  Object.keys(params).map( key => {
+    const val = params[key];
+    ret.push( `${key}=${encodeURIComponent(val)}` );
+  });
+
+  return ret.join('&');
+}
 
 // 1st and 2nd factor auth
 module.exports.factors = (event, context, callback) => {
-  console.log(event);
-  if (event.query['phone'] && event.query['code'] && event.query['address']) {
-      
-  const code = event.query['code'];
-  var phone = event.query['phone'];
-  phone = unescape(phone);
-  console.log('Logging in with', phone, code)
-  requests.login(phone, code, function (error, response, body) {
-    const retVal = {
-      statusCode: response.statusCode,
-      body: "",
-    };
-    if (error || response.statusCode !== 200) {
-      return callback(null, retVal);
-    }
-    
-    bot.beginDialog(event.query['address'], '/persistUserData', body, function (error) {
-      retVal.statusCode = 200;
-      retVal.body = JSON.stringify({
-        phone: phone,
-        url: `${SECOND_FACTOR_URL}?&authorization_code=${phone}`
-      });
-      return callback(null, retVal);
-    });
-  });
+  console.log('factors', event);
+  const redirect = event.queryStringParameters['redirect_uri'];
+  const address = event.queryStringParameters['address'];
+  const token = event.queryStringParameters['account_linking_token'];
+  var phone = event.queryStringParameters['phone'];
+  const path = event.path;
 
-  } else if (event.query['phone']) {
-    var phone = event.query['phone'];
+  if (path === '/factor2') {
+    phone = `+${unescape(phone)}`;
+    let code = event.queryStringParameters['code'];
+    console.log('Logging in with', phone, code)
+    requests.login(phone, code, function (error, response, body) {
+      const retVal = {
+        statusCode: 301,
+        body: '',
+        headers: {
+          'Content-Type': 'text/html',
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+        }
+      };
+      if (error || response.statusCode !== 200) {
+        console.log('Error while logging in', error, 'redirecting to home', retVal);
+
+        return callback(null, retVal);
+      }
+      var address = JSON.parse(event.queryStringParameters.address);
+      bot.beginDialog(address, '/persistUserData', body, function (error) {
+        retVal.statusCode = 301;
+        
+        if (error) {
+          console.log('Error persisting accounts', error, address);
+          retVal.headers = {
+            Location: `${redirect}` //error in linking
+          }
+        } else {
+          retVal.headers = {
+            Location: `${redirect}&authorization_code=${phone.replace('+', '')}`
+          }
+        }
+        console.log('Redirecting to', retVal.headers.Location);
+        retVal.body = '';
+        return callback(null, retVal);
+      });
+    });
+
+  } else if (path === '/factor1') {
+   
     phone = unescape(phone);
     console.log('requesting code for', phone)
 
     requests.requestCode(phone, function (error, response, body) {
       const retVal = {
-        statusCode: response.statusCode,
-        body: "",
+        statusCode: 301,
+        body: '',
       };
       if (error || response.statusCode !== 200) {
+        retVal.headers = {
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+        }
         return callback(null, retVal);
       }
       //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
-      retVal.statusCode = 200;
-    
-      retVal.body = JSON.stringify({
-        phone: phone,
-        url: `${SECOND_FACTOR_URL}?phone=${phone}`
-      });
+      retVal.headers = {
+        Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+      }
+      console.log('Redirecting to', retVal.headers);
+      retVal.body = '';
       return callback(null, retVal);
     });
+  } else {
+    const retVal = {
+      statusCode: 403
+    };
+    console.log('Why did I not find any useful things?', 'phone is', phone, 'address', address);
+    return callback(null, retVal);
   }
 };
 
@@ -126,6 +166,7 @@ intents.onDefault(function (session) {
 });
 
 bot.dialog('/welcome', function (session) {
+  console.log('Welcome presented as', FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address))
   var message = new builder.Message(session)
     .sourceEvent({
       facebook: {
@@ -135,7 +176,7 @@ bot.dialog('/welcome', function (session) {
             template_type: 'generic',
             elements: [{
               title: 'Welcome to Whim',
-              image_url: FRONTEND_URL + '/static/whim.jpg',
+              image_url: 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
               buttons: [{
                 type: 'account_link',
                 url: FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address)

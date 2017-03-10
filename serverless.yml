@@ -75,11 +75,11 @@ functions:
           path: scripts.js
           method: get
   message:
-    handler: index.listener.post
+    handler: index.listener
     environment:
       WHIM_API_KEY: ${file(./dev-env.yml):WHIM_API_KEY}
       WHIM_API_URL: ${file(./dev-env.yml):WHIM_API_URL}
-      FRONTEND_URL: ${file(./dev-env.yml):FRONTEND_URL}
+      BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
       MICROSOFT_APP_ID: ${file(./dev-env.yml):MICROSOFT_APP_ID}
       MICROSOFT_APP_PASSWORD: ${file(./dev-env.yml):MICROSOFT_APP_PASSWORD}
     events:
@@ -91,7 +91,7 @@ functions:
     environment:
       WHIM_API_KEY: ${file(./dev-env.yml):WHIM_API_KEY}
       WHIM_API_URL: ${file(./dev-env.yml):WHIM_API_URL}
-      FRONTEND_URL: ${file(./dev-env.yml):FRONTEND_URL}
+      BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
       MICROSOFT_APP_ID: ${file(./dev-env.yml):MICROSOFT_APP_ID}
       MICROSOFT_APP_PASSWORD: ${file(./dev-env.yml):MICROSOFT_APP_PASSWORD}
     events:
@@ -99,23 +99,16 @@ functions:
           path: factor1
           method: GET
           cors: true
-          integration: lambda
-          request:
-            parameters:
-              querystrings:
-                phone: true
-                address: false
+          environment:
+            BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
+        
       - http:
           path: factor2
           method: GET
           cors: true
-          integration: lambda
-          request:
-            parameters:
-              querystrings:
-                phone: true
-                code: true
-
+          environment:
+            BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
+         
 #    The following are a few example events you can configure
 #    NOTE: Please make sure to change your handler code to work with those events
 #    Check the event documentation for details
