@@ -5,6 +5,10 @@
   "dependencies": {
     "botbuilder": "^3.4.4",
     "request": "^2.78.0",
-    "restify": "^4.2.0"
+    "restify": "^4.2.0",
+    "serverless": "^1.8.0"
+  },
+  "devDependencies": {
+    "serverless-offline": "^3.10.2"
   }
 }

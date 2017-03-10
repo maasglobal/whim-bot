@@ -1,8 +1,8 @@
 var request = require('request');
-
-var WHIM_API_URL = 'https://api.test.maas.global';
+//require('request').debug = true
+var WHIM_API_URL = process.env.WHIM_API_URL;
 var WHIM_API_KEY = process.env.WHIM_API_KEY;
-
+console.log('WHIM API KEY', WHIM_API_KEY)
 module.exports.unlink = function (psid, callback) {
   request({
     url: 'https://graph.facebook.com/v2.6/me/unlink_accounts',

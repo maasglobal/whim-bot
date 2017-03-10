@@ -1,76 +1,126 @@
-var restify = require('restify');
-var builder = require('botbuilder');
+'use strict';
+/**
+ * Whim-Bot main handler
+ */
 
-var requests = require('./requests.js');
+const builder = require('botbuilder');
+const requests = require('./requests.js');
 
-var FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost';
-var FIRST_FACTOR_URL = FRONTEND_URL + '/static/factor1.html';
-var SECOND_FACTOR_URL = FRONTEND_URL + '/static/factor2.html';
+const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
+const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
+const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
 
-var server = restify.createServer();
-server.listen(process.env.port || process.env.PORT || 3978, function () {
-  console.log('%s listening to %s', server.name, server.url);
-});
-
-var connector = new builder.ChatConnector({
+const connector = new builder.ChatConnector({
   appId: process.env.MICROSOFT_APP_ID,
   appPassword: process.env.MICROSOFT_APP_PASSWORD
 });
 
-var bot = new builder.UniversalBot(connector);
+const bot = new builder.UniversalBot(connector);
+const listener = connector.listen();
+const intents = new builder.IntentDialog();
 
-server.post('/api/messages', connector.listen());
+// restify mock for lambda
+module.exports.listener = (event, context, callback) => {
+  console.log('Mock Listener handler called');
+  const mock = require('./serverless.js')(listener);
+  return mock.post(event, context, callback);
+}
 
-server.post('/factor1', restify.bodyParser(), function (req, res, next) {
-  var splitBody = req.body.split('phone=');
-  if (splitBody.length < 2) {
-    return res.send(400, 'Request did not contain phone in the body');
-  }
-  var phone = splitBody[1];
-  phone = unescape(phone);
-
-  requests.requestCode(phone, function (error, response, body) {
-    var queryString = req.url.split('?')[1];
-    if (error || response.statusCode !== 200) {
-      // In case of errors, redirect back to the first factor page.
-      // TODO: Inform user about the errors.
-      return res.redirect(FIRST_FACTOR_URL + '?' + queryString, next);
-    }
-    res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
+const concatenateQueryString = params => {
+  const ret = [];
+  Object.keys(params).map( key => {
+    const val = params[key];
+    ret.push( `${key}=${encodeURIComponent(val)}` );
   });
-});
 
-server.post('/factor2', restify.queryParser(), restify.bodyParser(), function (req, res, next) {
-  var splitBody = req.body.split('code=');
-  if (splitBody.length < 2) {
-    return res.send(400, 'Request did not contain code in the body');
-  }
-  var code = splitBody[1];
-  var phone = req.query.phone;
+  return ret.join('&');
+}
 
-  requests.login(phone, code, function (error, response, body) {
-    var queryString = req.url.split('?')[1];
-    if (error || response.statusCode !== 200) {
-      return res.redirect(SECOND_FACTOR_URL + '?' + queryString, next);
-    }
-    var address = JSON.parse(req.query.address);
-    bot.beginDialog(address, '/persistUserData', body, function (error) {
-      var redirectUri = req.query.redirect_uri + '&authorization_code=' + phone;
-      res.redirect(redirectUri, next);
+// 1st and 2nd factor auth
+module.exports.factors = (event, context, callback) => {
+  console.log('factors', event);
+  const redirect = event.queryStringParameters['redirect_uri'];
+  const address = event.queryStringParameters['address'];
+  const token = event.queryStringParameters['account_linking_token'];
+  var phone = event.queryStringParameters['phone'];
+  const path = event.path;
+
+  if (path === '/factor2') {
+    phone = `+${unescape(phone)}`;
+    let code = event.queryStringParameters['code'];
+    console.log('Logging in with', phone, code)
+    requests.login(phone, code, function (error, response, body) {
+      const retVal = {
+        statusCode: 301,
+        body: '',
+        headers: {
+          'Content-Type': 'text/html',
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+        }
+      };
+      if (error || response.statusCode !== 200) {
+        console.log('Error while logging in', error, 'redirecting to home', retVal);
+
+        return callback(null, retVal);
+      }
+      var address = JSON.parse(event.queryStringParameters.address);
+      bot.beginDialog(address, '/persistUserData', body, function (error) {
+        retVal.statusCode = 301;
+        
+        if (error) {
+          console.log('Error persisting accounts', error, address);
+          retVal.headers = {
+            Location: `${redirect}` //error in linking
+          }
+        } else {
+          retVal.headers = {
+            Location: `${redirect}&authorization_code=${phone.replace('+', '')}`
+          }
+        }
+        console.log('Redirecting to', retVal.headers.Location);
+        retVal.body = '';
+        return callback(null, retVal);
+      });
     });
-  });
-});
+
+  } else if (path === '/factor1') {
+   
+    phone = unescape(phone);
+    console.log('requesting code for', phone)
+
+    requests.requestCode(phone, function (error, response, body) {
+      const retVal = {
+        statusCode: 301,
+        body: '',
+      };
+      if (error || response.statusCode !== 200) {
+        retVal.headers = {
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+        }
+        return callback(null, retVal);
+      }
+      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
+      retVal.headers = {
+        Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+      }
+      console.log('Redirecting to', retVal.headers);
+      retVal.body = '';
+      return callback(null, retVal);
+    });
+  } else {
+    const retVal = {
+      statusCode: 403
+    };
+    console.log('Why did I not find any useful things?', 'phone is', phone, 'address', address);
+    return callback(null, retVal);
+  }
+};
 
 bot.dialog('/persistUserData', function (session, data) {
   session.userData.user = data;
   session.endDialog();
 });
 
-server.get(/\/static\/?.*/, restify.serveStatic({
-  directory: __dirname
-}));
-
-var intents = new builder.IntentDialog();
 bot.dialog('/', intents);
 
 var handleAccountLinking = function (session) {
@@ -116,6 +166,7 @@ intents.onDefault(function (session) {
 });
 
 bot.dialog('/welcome', function (session) {
+  console.log('Welcome presented as', FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address))
   var message = new builder.Message(session)
     .sourceEvent({
       facebook: {
@@ -125,7 +176,7 @@ bot.dialog('/welcome', function (session) {
             template_type: 'generic',
             elements: [{
               title: 'Welcome to Whim',
-              image_url: FRONTEND_URL + '/static/whim.jpg',
+              image_url: 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
               buttons: [{
                 type: 'account_link',
                 url: FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address)

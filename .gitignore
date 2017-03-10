@@ -1,2 +1,6 @@
-node_modules/
-.vscode/
+.vscode
+node_modules
+dev-env.yml
+.serverless
+event*.json
+
