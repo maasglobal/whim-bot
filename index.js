@@ -21,6 +21,8 @@ const intents = new builder.IntentDialog();
 // restify mock for lambda
 module.exports.listener = require('./serverless.js')(listener);
 
+console.log('Listener is', module.exports.listener.post);
+
 // 1st and 2nd factor auth
 module.exports.factors = (event, context, callback) => {
   console.log(event);
