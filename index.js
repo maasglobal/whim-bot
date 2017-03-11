@@ -5,11 +5,14 @@
 
 const builder = require('botbuilder');
 const requests = require('./requests.js');
+const Promise = require('bluebird');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
 const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
-
+if (!process.env.WHIM_API_KEY) {
+  console.log('ERROR: Environment doesnt seem to be properly set');
+}
 const connector = new builder.ChatConnector({
   appId: process.env.MICROSOFT_APP_ID,
   appPassword: process.env.MICROSOFT_APP_PASSWORD
@@ -21,7 +24,7 @@ const intents = new builder.IntentDialog();
 
 // restify mock for lambda
 module.exports.listener = (event, context, callback) => {
-  console.log('Mock Listener handler called');
+  console.log('Mock Listener handler called with event', event);
   const mock = require('./serverless.js')(listener);
   return mock.post(event, context, callback);
 }
@@ -34,6 +37,44 @@ const concatenateQueryString = params => {
   });
 
   return ret.join('&');
+}
+
+const fetchProfileFavorites = (token) => {
+  return new Promise( (resolve, reject) => {
+    requests.favorites(token, (err, res) => {
+      if (err) return reject(err);
+      const arr = {};
+      for (const item of res.body.profile.favoriteLocations) {
+        arr[item.name] = {
+          latitude: item.lat,
+          longitude: item.lon,
+          name: item.name
+        };
+      }
+      return resolve(arr);
+    });
+  });
+}
+
+const filterTaxi = (itineraries) => {
+  let ret = undefined;
+  for (const item of itineraries) {
+    console.log('Looking for TAXI itinerary', item);
+    if (item.legs[0].mode === 'TAXI') {
+      console.log('Found a TAXI itinerary', item);
+      ret = item;
+    }
+  }
+  return ret;  
+}
+
+const filterPT = (itineraries) => {
+  let ret = itineraries[0];
+  console.log('TODO: filterPT for the best match/score!!');
+  for (const item of itineraries) {
+
+  }
+  return ret;
 }
 
 // 1st and 2nd factor auth
@@ -132,7 +173,7 @@ var handleAccountLinking = function (session) {
   var username = accountLinking.authorization_code;
   var authorizationStatus = accountLinking.status;
   if (authorizationStatus === 'linked') {
-    // TODO: Call Whim API for user info
+    
     session.endDialog('Account linked - you are now known as ' + username);
   } else if (authorizationStatus === 'unlinked') {
     // Remove user from the userData
@@ -155,11 +196,31 @@ intents.onDefault(function (session) {
       return;
     }
     var entities = session.message.entities;
+    console.log('Entities received are', entities);
+
     if (entities.length > 0 && entities[0].geo) {
       session.beginDialog('/location', entities[0].geo);
       return;
     }
-    session.endDialog('To schedule a ride, send a location');
+    if (session.message.text && session.message.text.length > 4) {
+      console.log('Searching for a place ', session.message.text)
+      return requests.locations(session.message.text, (err, results) => {
+        console.log('Results from search are', results.body.total)
+        if (err || !results.body.region || !results.body.region.center) {
+          console.log('ERROR', err);
+          return session.endDialog('Start with a location name or use the Messenger location feature');
+        } else {
+          
+          // TODO send the location as a GEO object in the mean time
+          return session.beginDialog('/location', {
+            latitude: results.body.region.center.latitude,
+            longitude: results.body.region.center.longitude,
+            name: session.message.text
+          });
+        }
+      });
+    }
+    session.endDialog('To request a ride, please send your location');
   } else {
     session.endDialog('I am currently expecting to be called from Facebook Messenger');
   }
@@ -207,18 +268,38 @@ var dummyPlaces = {
 bot.dialog('/location', [
   function (session, fromLocation) {
     session.dialogData.fromLocation = fromLocation;
-    session.beginDialog('/destination', dummyPlaces);
+    console.log('fromLocation', fromLocation);
+    session.send(`Planning a route from ${fromLocation.name}`);
+    fetchProfileFavorites(session.userData.user.id_token)
+      .then( favorites => {
+        console.log('Profile info', favorites);
+        session.beginDialog('/destination', favorites);
+      })
+      .catch( err => {
+        console.log('Error fetching profile', err);
+        session.endDialog('/destination');
+      });
   },
   function (session, results) {
     if (results.response) {
       var toLocation = results.response;
+      session.dialogData.toLocation = toLocation;
       var fromLocation = session.dialogData.fromLocation;
+      session.send(`Searching for routes from ${fromLocation.name} to ${toLocation.name}`);
       requests.routes(
         fromLocation, toLocation,
         session.userData.user.id_token,
         function (error, response, body) {
           session.send('Found ' + body.plan.itineraries.length + ' routes');
-          builder.Prompts.confirm(session, 'Do you want to select the shortest?');
+          session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
+          session.dialogData.ptPlan = filterPT(body.plan.itineraries);
+          if (body.plan.itineraries.length === 0) {
+            session.send(`Did not find routes to ${toLocation.name}`);
+            return session.replaceDialog('/destination', toLocation);
+          } 
+          const topItin = session.dialogData.ptPlan;
+          console.log('Itinerary', topItin);
+          builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport one - ${topItin.fare.points} points?`);
         }
       );
     }
@@ -226,10 +307,28 @@ bot.dialog('/location', [
   function (session, results) {
     if (results.response) {
       // TODO: Continue based on the response
+      // FIXME Continue how?
+      console.log('Response to the session is', results);
+      return session.endDialog('Your ride is booked - check your Whim-app!');
+    } 
+    if (session.dialogData.taxiPlan) {
+      const topItin = session.dialogData.taxiPlan;
+      return builder.Prompts.confirm(session, `Do you want to Order a Taxi instead? ${topItin.fare.points} points`);
     }
-    session.endDialog('Your ride is on the way...');
+    return session.endDialog('Ok. Please throw an another challenge!');
+  },
+  function (session, results) {
+    console.log('')
+    if (results.response) {
+      // TODO: Continue based on the response
+      // FIXME Continue how?
+      console.log('Response to the Taxi question is', results);
+      return session.endDialog('Your ride is booked - check your Whim-app!');
+    } 
+    session.endDialog('Ok, please select another starting point!');
   }
 ]);
+
 
 bot.dialog('/destination', [
   function (session, choices) {
@@ -244,6 +343,7 @@ bot.dialog('/destination', [
     );
   },
   function (session, results) {
+    console.log('Destination response', results);
     if (results.response && results.response.entity) {
       var choices = session.dialogData.choices;
       session.endDialogWithResult({
@@ -252,6 +352,25 @@ bot.dialog('/destination', [
     } else if (session.message.entities.length > 0 && session.message.entities[0].geo) {
       session.endDialogWithResult({
         response: session.message.entities[0].geo
+      });
+    } else if (session.message.text && session.message.text.length > 4) {
+      console.log('Searching for a place ', session.message.text)
+      return requests.locations(session.message.text, (err, results) => {
+        console.log('Results from search are', results.body.total)
+        if (err || !results.body.region || !results.body.region.center) {
+          console.log('ERROR', err);
+          session.send('Did not understand the sent location - please try again');
+          session.replaceDialog('/destination', session.dialogData.choices);
+        } else {
+          // TODO send the location as a GEO object in the mean time
+          return  session.endDialogWithResult({
+            response: {
+              latitude: results.body.region.center.latitude,
+              longitude: results.body.region.center.longitude,
+              name: session.message.text
+            }
+          });
+        }
       });
     } else {
       session.send('Did not understand the sent location - please try again');
