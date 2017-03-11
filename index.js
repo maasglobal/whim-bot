@@ -211,7 +211,8 @@ intents.onDefault(function (session) {
     console.log('Entities received are', entities);
 
     if (entities.length > 0 && entities[0].geo) {
-      session.beginDialog('/location', entities[0].geo);
+      const geo = Object.assign({name: 'Pin Location'}, entities[0].geo)
+      session.beginDialog('/options', geo);
       return;
     }
     if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
