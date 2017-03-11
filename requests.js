@@ -107,7 +107,7 @@ module.exports.locations = (str, callback) => {
 
 module.exports.places = (str, lat, lon, callback) => {
   request({
-    url: `${YELP_API_URL}?latitude=${lat}&longitude=${lon}&term=${str}`,
+    url: `${YELP_API_URL}?latitude=${lat}&longitude=${lon}&term=${str}&limit=35`,
     headers: {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN
     },

@@ -24,6 +24,10 @@ const bot = new builder.UniversalBot(connector);
 const listener = connector.listen();
 const intents = new builder.IntentDialog();
 
+intents.matches('cancel', '/cancel');
+intents.matches('quit', '/cancel');
+intents.matches('exit', '/cancel');
+
 // restify mock for lambda
 module.exports.listener = (event, context, callback) => {
   console.log('Mock Listener handler called with event', event);
@@ -166,6 +170,10 @@ bot.dialog('/persistUserData', function (session, data) {
   session.endDialog();
 });
 
+bot.dialog('/cancel', session => {
+  session.endConversation();
+});
+
 bot.dialog('/', intents);
 
 var handleAccountLinking = function (session) {
@@ -207,6 +215,14 @@ intents.onDefault(function (session) {
       return;
     }
     if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
+      // TODO recognize natural language
+      switch (session.message.text) {
+        case 'quit':
+        case 'cancel':
+          return session.beginDialog('/cancel');
+        default:
+          break;
+      }
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
       return requests.locations(session.message.text, (err, results) => {
@@ -217,7 +233,7 @@ intents.onDefault(function (session) {
         } else {
           
           // TODO send the location as a GEO object in the mean time
-          return session.beginDialog('/location', {
+          return session.beginDialog('/options', {
             latitude: results.body.region.center.latitude,
             longitude: results.body.region.center.longitude,
             name: session.message.text
@@ -231,6 +247,87 @@ intents.onDefault(function (session) {
   }
 });
 
+bot.dialog('/options', [(session, fromLocation) => {
+  session.dialogData.fromLocation = fromLocation;
+  session.dialogData.choices = {
+    Routes: {
+
+    },
+    Food: {
+
+    }
+  };
+  builder.Prompts.choice(
+      session,
+      `Choose action (${fromLocation.name})`,
+      session.dialogData.choices,
+      {
+        maxRetries: 0
+      }
+    );
+},
+(session, options) => {
+  console.log('options were', options);
+  if (!options.response) {
+    return session.endDialog('Please make a selection');
+  }
+  switch (options.response.index) {
+    case 0:
+     return session.beginDialog('/location', session.dialogData.fromLocation); 
+    case 1:
+     return session.beginDialog('/food', session.dialogData.fromLocation); 
+    default:
+      return session.endDialog('Unknown selection');
+  }
+}
+]);
+
+bot.dialog('/food', [
+  (session, location) => {
+    console.log('Food for location', location);
+    if (!location) {
+      return session.endDialog('Need a location');
+    }
+    session.dialogData.fromLocation = location;
+    session.sendTyping();
+    requests.places('restaurants', location.latitude, location.longitude, (err, results) => {
+      if (err) { return session.endDialog('Error finding restaurants'); }
+      if (!results.body.businesses || results.body.businesses.length < 1 ) {
+        return session.endDialog('Did not find restaurants');
+      }
+      const choices = {
+  
+      };
+      const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
+      const choice = results.body.businesses[rand];
+      choices[choice.name] = choice;
+      choices['Shuffle again!'] = {};
+      session.send('Shuffling....');
+      session.dialogData.choices = choices;
+      builder.Prompts.choice(
+          session,
+          `Is this OK?`,
+          choices,
+          {
+            maxRetries: 0
+          }
+      );
+    })
+  },
+  (session, options) => {
+    console.log('Selection was', options);
+    if (options.response && options.response.index === 0) {
+      const coords = Object.assign( { name: options.response.entity }, session.dialogData.choices[options.response.entity].coordinates);
+      const fromLocation = session.dialogData.fromLocation;
+      fromLocation.toLocation = coords;
+      return session.beginDialog('/location', fromLocation );     
+    } 
+    if (options.response && options.response.index === 1) {
+      return session.replaceDialog('/food', session.dialogData.fromLocation);     
+    } 
+    return session.endDialog('Ok, where else would you like to look?');     
+  }
+])
 bot.dialog('/welcome', function (session) {
   console.log('Welcome presented as', FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address))
   var message = new builder.Message(session)
@@ -276,6 +373,9 @@ bot.dialog('/location', [
     console.log('fromLocation', fromLocation);
     session.send(`Planning a route from ${fromLocation.name}`);
     session.sendTyping();
+    if (fromLocation && fromLocation.toLocation) {
+        return session.beginDialog('/destination', fromLocation);
+    }
     fetchProfileFavorites(session.userData.user.id_token)
       .then( favorites => {
         console.log('Profile info', favorites);
@@ -283,10 +383,11 @@ bot.dialog('/location', [
       })
       .catch( err => {
         console.log('Error fetching profile', err);
-        session.endDialog('/destination');
+        session.endDialog('Had an error while fetching favorites');
       });
   },
   function (session, results) {
+    console.log('User choice for to-location', results)
     if (results.response) {
       var toLocation = results.response;
       session.dialogData.toLocation = toLocation;
@@ -300,8 +401,7 @@ bot.dialog('/location', [
           session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
           session.dialogData.ptPlan = filterPT(body.plan.itineraries);
           if (!session.dialogData.ptPlan) {
-            session.send(`Did not find routes to ${toLocation.name}`);
-            return session.endDialog('/destination');
+            return session.endDialog(`Did not find routes to ${toLocation.name}`);
           } 
           session.send('Found ' + body.plan.itineraries.length + ' routes');
           const topItin = session.dialogData.ptPlan;
@@ -347,6 +447,12 @@ bot.dialog('/location', [
 bot.dialog('/destination', [
   function (session, choices) {
     session.dialogData.choices = choices;
+    if (choices.toLocation) {
+      console.log('destination had toLocation', choices.toLocation);
+      return session.endDialogWithResult({
+        response: choices.toLocation
+      });
+    }
     builder.Prompts.choice(
       session,
       'Choose or send location to set the destination',
