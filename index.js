@@ -10,6 +10,8 @@ const Promise = require('bluebird');
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
 const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
+const MIN_LOCATION_CHARS = 3;
+
 if (!process.env.WHIM_API_KEY) {
   console.log('ERROR: Environment doesnt seem to be properly set');
 }
@@ -69,10 +71,12 @@ const filterTaxi = (itineraries) => {
 }
 
 const filterPT = (itineraries) => {
-  let ret = itineraries[0];
+  let ret = undefined;
   console.log('TODO: filterPT for the best match/score!!');
   for (const item of itineraries) {
-
+    if (!ret && item.fare.points !== null) {
+      ret = item;
+    }
   }
   return ret;
 }
@@ -202,8 +206,9 @@ intents.onDefault(function (session) {
       session.beginDialog('/location', entities[0].geo);
       return;
     }
-    if (session.message.text && session.message.text.length > 4) {
+    if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
+      session.sendTyping();
       return requests.locations(session.message.text, (err, results) => {
         console.log('Results from search are', results.body.total)
         if (err || !results.body.region || !results.body.region.center) {
@@ -270,6 +275,7 @@ bot.dialog('/location', [
     session.dialogData.fromLocation = fromLocation;
     console.log('fromLocation', fromLocation);
     session.send(`Planning a route from ${fromLocation.name}`);
+    session.sendTyping();
     fetchProfileFavorites(session.userData.user.id_token)
       .then( favorites => {
         console.log('Profile info', favorites);
@@ -286,17 +292,18 @@ bot.dialog('/location', [
       session.dialogData.toLocation = toLocation;
       var fromLocation = session.dialogData.fromLocation;
       session.send(`Searching for routes from ${fromLocation.name} to ${toLocation.name}`);
+      session.sendTyping();
       requests.routes(
         fromLocation, toLocation,
         session.userData.user.id_token,
         function (error, response, body) {
-          session.send('Found ' + body.plan.itineraries.length + ' routes');
           session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
           session.dialogData.ptPlan = filterPT(body.plan.itineraries);
-          if (body.plan.itineraries.length === 0) {
+          if (!session.dialogData.ptPlan) {
             session.send(`Did not find routes to ${toLocation.name}`);
-            return session.replaceDialog('/destination', toLocation);
+            return session.endDialog('/destination');
           } 
+          session.send('Found ' + body.plan.itineraries.length + ' routes');
           const topItin = session.dialogData.ptPlan;
           console.log('Itinerary', topItin);
           builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport one - ${topItin.fare.points} points?`);
@@ -309,7 +316,14 @@ bot.dialog('/location', [
       // TODO: Continue based on the response
       // FIXME Continue how?
       console.log('Response to the session is', results);
-      return session.endDialog('Your ride is booked - check your Whim-app!');
+      return requests.book(session.dialogData.ptPlan, session.userData.user.id_token, (err, res) => {
+        if (err) {
+          console.log('ERROR booking trip', err);
+          return session.endDialog('Error booking your trip');
+        }
+        return session.endDialog('Your ride is booked - check your Whim-app!');
+      })
+      
     } 
     if (session.dialogData.taxiPlan) {
       const topItin = session.dialogData.taxiPlan;
@@ -353,8 +367,9 @@ bot.dialog('/destination', [
       session.endDialogWithResult({
         response: session.message.entities[0].geo
       });
-    } else if (session.message.text && session.message.text.length > 4) {
+    } else if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
+      session.sendTyping();
       return requests.locations(session.message.text, (err, results) => {
         console.log('Results from search are', results.body.total)
         if (err || !results.body.region || !results.body.region.center) {

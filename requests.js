@@ -81,6 +81,20 @@ module.exports.favorites = (token, callback) => {
   }, callback);
 };
 
+module.exports.book = (itinerary, token, callback) => {
+  request({
+    url: WHIM_API_URL + '/itineraries',
+    headers: {
+      'X-API-Key': WHIM_API_KEY,
+      'Authorization': 'Bearer ' + token
+    },
+    json: true,
+    method: 'POST',
+    body: {
+      itinerary: itinerary
+    }
+  }, callback);
+};
 module.exports.locations = (str, callback) => {
   request({
     url: `${YELP_API_URL}?location=${str}`,
@@ -100,4 +114,3 @@ module.exports.places = (str, lat, lon, callback) => {
     json: true
   }, callback);
 };
-
