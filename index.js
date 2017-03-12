@@ -378,7 +378,7 @@ bot.dialog('/options', [(session, fromLocation) => {
       default:
         return session.replaceDialog('/options', param); 
     }
-  } else if(['quit','stop','cancel','help'].includes(session.message.text)) {
+  } else if(['quit','stop','cancel','help'].indexOf(session.message.text)) {
       return session.endDialog('Ok, start over by sending a location.');
   } else {
     param.kind =  session.message.text;
