@@ -1,0 +1,9 @@
+WHIM_API_KEY: ershtdjysgthstha
+WHIM_API_URL: https://api.whimapp.global
+XBOT_FRONTEND_URL: https://<id>.ngrok.io 
+BOT_FRONTEND_URL: https://<id>.execute-api.eu-west-1.amazonaws.com/dev
+MICROSOFT_APP_ID: <id>
+MICROSOFT_APP_PASSWORD: <pwd>
+YELP_APP_ID: <id>
+YELP_APP_SECRET: <secret>
+YELP_ACCESS_TOKEN: <token>

@@ -259,6 +259,7 @@ bot.dialog('/welcome', function (session) {
     });
   session.endDialog(message);
 });
+
 const filterGeoCollection = coll => {
   if (!coll || !coll.features || coll.features.length < 1) {
     console.log('This wasnt a feature collection');
@@ -288,14 +289,33 @@ const filterGeoCollection = coll => {
 
 bot.dialog('/geosearch', [
   (session, text) => {
-    requests.geocode(text, 60.1, 24.2, session.userData.user.id_token, (err, results) => {
+    requests.geocode(text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
         const location = filterGeoCollection(results.body);
         console.log('Results from search are', results.body, 'filtered as', location);
         if (err || !location) {
           console.log('ERROR', err);
           return session.endDialog('Could not find that location. Try again.');
         } else {
-          session.send(`Found ${location.name}`);
+          const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
+          console.log('Requesting a static map from', googleURL);
+          const message = new builder.Message(session)
+              .sourceEvent({
+                facebook: {
+                  attachment: {
+                    type: 'template',
+                    payload: {
+                      template_type: 'generic',
+                      elements: [{
+                        title: location.name,
+                        image_url: googleURL,
+                      }]
+                    }
+                  }
+                }
+              });
+      
+          session.send(message);
+          
           session.dialogData.location = location;
           builder.Prompts.choice(session,
             `Use ${location.name} as starting point?`,
@@ -324,10 +344,13 @@ bot.dialog('/geosearch', [
 bot.dialog('/options', [(session, fromLocation) => {
   session.dialogData.fromLocation = fromLocation;
   session.dialogData.choices = {
-    Routes: {
+    routes: {
 
     },
-    Food: {
+    restaurants: {
+
+    },
+    pizza: {
 
     }
   };
@@ -341,46 +364,80 @@ bot.dialog('/options', [(session, fromLocation) => {
     );
 },
 (session, options) => {
-  console.log('options were', options);
-  if (!options.response) {
-    return session.endDialog('Please make a selection');
-  }
-  switch (options.response.index) {
-    case 0:
-     return session.beginDialog('/location', session.dialogData.fromLocation); 
-    case 1:
-     return session.beginDialog('/food', session.dialogData.fromLocation); 
-    default:
-      return session.endDialog('Unknown selection');
+  console.log('options were', options.response, 'and message', session.message.text);
+  const param = session.dialogData.fromLocation;
+  if (options.response) {
+    param.kind = options.response.entity;
+    switch (options.response.index) {
+      case 0:
+        return session.beginDialog('/location', param); 
+      case 1:
+      case 2:
+        console.log('Moving to /food to search for', param);
+        return session.beginDialog('/food', param); 
+      default:
+        return session.replaceDialog('/options', param); 
+    }
+  } else if(['quit','stop','cancel','help'].includes(session.message.text)) {
+      return session.endDialog('Ok, start over by sending a location.');
+  } else {
+    param.kind =  session.message.text;
+    console.log('Moving to /food to search for', param);
+    return session.beginDialog('/food', param); 
   }
 }
 ]);
+const kFormatter = num => {
+    return num > 999 ? (num/1000).toFixed(1) + 'k' : Math.floor(num) + 'm'
+}
 
 bot.dialog('/food', [
   (session, location) => {
-    console.log('Food for location', location);
+    const kind = location.kind;
+    console.log(kind, 'for location', location);
     if (!location) {
       return session.endDialog('Need a location');
     }
     session.dialogData.fromLocation = location;
     session.sendTyping();
-    requests.places('restaurants', location.latitude, location.longitude, (err, results) => {
+    requests.places(kind, location.latitude, location.longitude, (err, results) => {
       if (err) { return session.endDialog('Error finding restaurants'); }
       if (!results.body.businesses || results.body.businesses.length < 1 ) {
         return session.endDialog('Did not find restaurants');
       }
-      const choices = {
-  
-      };
+      const choices = {};
       const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
       const choice = results.body.businesses[rand];
+      console.log('Selected option', choice);
+      const message = new builder.Message(session)
+          .sourceEvent({
+            facebook: {
+              attachment: {
+                type: 'template',
+                payload: {
+                  template_type: 'generic',
+                  elements: [{
+                    title: choice.name,
+                    subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
+                    image_url: choice.image_url,
+                    buttons: [{
+                      type: 'web_url',
+                      url: choice.url,
+                      title: 'Visit Yelp Site'
+                    }]
+                  }]
+                }
+              }
+            }
+          });
+  
+      session.send(message);
       choices[choice.name] = choice;
       choices['Shuffle again!'] = {};
-      session.send('Shuffling....');
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          `Is this OK?`,
+          'Make a selection',
           choices,
           {
             maxRetries: 0
@@ -519,7 +576,7 @@ bot.dialog('/destination', [
     } else if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
-      return requests.geocode(session.message.text, 60.1, 24.1, session.userData.user.id_token, (err, results) => {
+      return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
         console.log('Results from search are', results.body);
         const location = filterGeoCollection(results.body);
         if (err || !location) {
@@ -528,6 +585,26 @@ bot.dialog('/destination', [
           session.replaceDialog('/destination', session.dialogData.choices);
         } else {
           session.dialogData.location = location;
+          const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
+          console.log('Requesting a static map from', googleURL);
+          const message = new builder.Message(session)
+              .sourceEvent({
+                facebook: {
+                  attachment: {
+                    type: 'template',
+                    payload: {
+                      template_type: 'generic',
+                      elements: [{
+                        title: location.name,
+                        image_url: googleURL,
+                      }]
+                    }
+                  }
+                }
+              });
+      
+          session.send(message);
+                    
           builder.Prompts.choice(session,
             `Use ${location.name} as destination?`,
             {

@@ -85,6 +85,7 @@ functions:
           method: get
   message:
     handler: index.listener
+    timeout: 15
     events:
       - http:
           path: api/messages
