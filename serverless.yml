@@ -29,6 +29,7 @@ provider:
     YELP_APP_ID: ${file(./dev-env.yml):YELP_APP_ID}
     YELP_APP_SECRET: ${file(./dev-env.yml):YELP_APP_SECRET}
     YELP_ACCESS_TOKEN: ${file(./dev-env.yml):YELP_ACCESS_TOKEN}
+    FB_PAGE_TOKEN: ${file(./dev-env.yml):FB_PAGE_TOKEN}
 
 # you can overwrite defaults here
 stage: dev

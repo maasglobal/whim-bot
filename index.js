@@ -65,7 +65,7 @@ const fetchProfileFavorites = (token) => {
 const filterTaxi = (itineraries) => {
   let ret = undefined;
   for (const item of itineraries) {
-    console.log('Looking for TAXI itinerary', item);
+    //console.log('Looking for TAXI itinerary', item);
     if (item.legs[0].mode === 'TAXI') {
       console.log('Found a TAXI itinerary', item);
       ret = item;
@@ -356,7 +356,7 @@ bot.dialog('/options', [(session, fromLocation) => {
   };
   builder.Prompts.choice(
       session,
-      `Choose action (${fromLocation.name} as starting point)`,
+      `Select what to search from ${fromLocation.name}, or type something else like 'italian'`,
       session.dialogData.choices,
       {
         maxRetries: 0
@@ -409,6 +409,9 @@ bot.dialog('/food', [
       const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
       const choice = results.body.businesses[rand];
       console.log('Selected option', choice);
+      if (!choice.rating) {
+        choice.rating = '-';
+      }
       const message = new builder.Message(session)
           .sourceEvent({
             facebook: {

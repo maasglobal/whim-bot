@@ -15,6 +15,9 @@ const factor1 = () => {
       <input type="tel" name="phone">
       <input type="button" value="Login" onclick="submitNumberClicked()">
     </form>
+    <h3>What's this?</h3>
+    <p>You need an account with <a href="https://whimapp.com">Whim</a> for this to work. 
+       Please download the app and sign up before continuing.</p>
   </body>
   </html>
 `

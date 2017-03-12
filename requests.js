@@ -13,13 +13,12 @@ const YELP_APP_ID = process.env.YELP_APP_ID;
 const YELP_APP_SECRET = process.env.YELP_APP_SECRET;
 const YELP_ACCESS_TOKEN = process.env.YELP_ACCESS_TOKEN;
 
-console.log('WHIM API KEY', WHIM_API_KEY)
 module.exports.unlink = function (psid, callback) {
   request({
     url: 'https://graph.facebook.com/v2.6/me/unlink_accounts',
     method: 'POST',
     qs: {
-      access_token: process.env.FACEBOOK_PAGE_TOKEN
+      access_token: process.env.FB_PAGE_TOKEN
     },
     body: {
       psid: psid
@@ -128,7 +127,10 @@ module.exports.book = (itinerary, token, callback) => {
 };
 module.exports.locations = (str, callback) => {
   request({
-    url: `${YELP_API_URL}?location=${str}`,
+    url: YELP_API_URL,
+    qs: {
+      location: str,
+    },
     headers: {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN
     },
@@ -138,7 +140,14 @@ module.exports.locations = (str, callback) => {
 
 module.exports.places = (str, lat, lon, callback) => {
   request({
-    url: `${YELP_API_URL}?latitude=${lat}&longitude=${lon}&term=${str}&limit=35&open_now=true`,
+    url: YELP_API_URL,
+    qs: {
+      latitude: lat,
+      longitude: lon,
+      term: str,
+      limit: 15,
+      open_now: true,
+    },
     headers: {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN
     },
