@@ -81,6 +81,37 @@ module.exports.favorites = (token, callback) => {
   }, callback);
 };
 
+module.exports.reverse = (lat, lon, token, callback) => {
+  request({
+    url: `${WHIM_API_URL}/geocoding/reverse`,
+    qs: {
+      lat: lat,
+      lon: lon,
+    },
+    headers: {
+      'X-API-Key': WHIM_API_KEY,
+      'Authorization': 'Bearer ' + token
+    },
+    json: true
+  }, callback);
+};
+
+module.exports.geocode = (text, lat, lon, token, callback) => {
+  request({
+    url: `${WHIM_API_URL}/geocoding`,
+    qs: {
+      name: text,
+      lat: lat,
+      lon: lon,
+    },
+    headers: {
+      'X-API-Key': WHIM_API_KEY,
+      'Authorization': 'Bearer ' + token
+    },
+    json: true
+  }, callback);
+};
+
 module.exports.book = (itinerary, token, callback) => {
   request({
     url: WHIM_API_URL + '/itineraries',
