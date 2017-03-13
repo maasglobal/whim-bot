@@ -1,7 +1,7 @@
 'use strict';
 
-const request = require('request');
-//const rp = require('request-promise-lite');
+//const request = require('request');
+const request = require('request-promise-lite');
 
 //require('request').debug = true
 const WHIM_API_URL = process.env.WHIM_API_URL;
@@ -14,22 +14,17 @@ const YELP_APP_SECRET = process.env.YELP_APP_SECRET;
 const YELP_ACCESS_TOKEN = process.env.YELP_ACCESS_TOKEN;
 
 module.exports.unlink = function (psid, callback) {
-  request({
-    url: 'https://graph.facebook.com/v2.6/me/unlink_accounts',
+  return request.post(`https://graph.facebook.com/v2.6/me/unlink_accounts?access_token=${process.env.FB_PAGE_TOKEN}`, {
     method: 'POST',
-    qs: {
-      access_token: process.env.FB_PAGE_TOKEN
-    },
-    body: {
+    form: {
       psid: psid
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.requestCode = function (phone, callback) {
-  request({
-    url: WHIM_API_URL + '/auth/sms-request-code',
+  return request.get(WHIM_API_URL + '/auth/sms-request-code', {
     qs: {
       phone: phone
     },
@@ -37,12 +32,11 @@ module.exports.requestCode = function (phone, callback) {
       'X-API-Key': WHIM_API_KEY
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.login = function (phone, code, callback) {
-  request({
-    url: WHIM_API_URL + '/auth/sms-login',
+  return request.get(WHIM_API_URL + '/auth/sms-login', {
     qs: {
       phone: phone,
       code: code
@@ -51,12 +45,11 @@ module.exports.login = function (phone, code, callback) {
       'X-API-Key': WHIM_API_KEY
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.routes = function (from, to, token, callback) {
-  request({
-    url: WHIM_API_URL + '/routes',
+  return request.get(WHIM_API_URL + '/routes', {
     qs: {
       from: from.latitude + ',' + from.longitude,
       to: to.latitude + ',' + to.longitude,
@@ -66,23 +59,21 @@ module.exports.routes = function (from, to, token, callback) {
       'Authorization': 'Bearer ' + token
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.favorites = (token, callback) => {
-  request({
-    url: WHIM_API_URL + '/profile',
+  return request.get( WHIM_API_URL + '/profile', {
     headers: {
       'X-API-Key': WHIM_API_KEY,
       'Authorization': 'Bearer ' + token
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.reverse = (lat, lon, token, callback) => {
-  request({
-    url: `${WHIM_API_URL}/geocoding/reverse`,
+  return request.get(`${WHIM_API_URL}/geocoding/reverse`, {
     qs: {
       lat: lat,
       lon: lon,
@@ -92,12 +83,11 @@ module.exports.reverse = (lat, lon, token, callback) => {
       'Authorization': 'Bearer ' + token
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.geocode = (text, lat, lon, token, callback) => {
-  request({
-    url: `${WHIM_API_URL}/geocoding`,
+  return request.get(`${WHIM_API_URL}/geocoding`, {
     qs: {
       name: text,
       lat: lat,
@@ -108,12 +98,11 @@ module.exports.geocode = (text, lat, lon, token, callback) => {
       'Authorization': 'Bearer ' + token
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.book = (itinerary, token, callback) => {
-  request({
-    url: WHIM_API_URL + '/itineraries',
+  return request.post(WHIM_API_URL + '/itineraries', {
     headers: {
       'X-API-Key': WHIM_API_KEY,
       'Authorization': 'Bearer ' + token
@@ -123,11 +112,13 @@ module.exports.book = (itinerary, token, callback) => {
     body: {
       itinerary: itinerary
     }
-  }, callback);
+  });
 };
 module.exports.locations = (str, callback) => {
-  request({
-    url: YELP_API_URL,
+  if (callback) {
+    throw new Error('Should not sepcify a callback for primisified requests');
+  }
+  return request.get(YELP_API_URL, {
     qs: {
       location: str,
     },
@@ -135,12 +126,14 @@ module.exports.locations = (str, callback) => {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.places = (str, lat, lon, callback) => {
-  request({
-    url: YELP_API_URL,
+  if (callback) {
+    throw new Error('Should not sepcify a callback for primisified requests');
+  }
+  return request.get(YELP_API_URL,{
     qs: {
       latitude: lat,
       longitude: lon,
@@ -152,31 +145,32 @@ module.exports.places = (str, lat, lon, callback) => {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN
     },
     json: true
-  }, callback);
+  });
 };
 
 module.exports.localTime = (lat, lon, utcTime, callback) => {
   const url = `https://maps.googleapis.com/maps/api/timezone/json`;
-  request({
-    url: url,
+  return request.get(url, {
     qs: {
       lat: lat,
       lon: lon,
       timestamp: utcTime,
     },
     json: true
-  }, callback);
+  });
 }
 
 module.exports.whimCarAvailability = (lat, lon, utcTime, callback) => {
+  if (callback) {
+    throw new Error('Should not sepcify a callback for primisified requests');
+  }
   const url = `https://maps.googleapis.com/maps/api/timezone/json`;
-  request({
-    url: url,
+  return request.get(url, {
     qs: {
       lat: lat,
       lon: lon,
       timestamp: utcTime,
     },
     json: true
-  }, callback);
+  });
 }

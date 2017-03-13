@@ -5,7 +5,7 @@
 
 const builder = require('botbuilder');
 const requests = require('./requests.js');
-const Promise = require('bluebird');
+//const Promise = require('bluebird');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
@@ -78,10 +78,11 @@ const concatenateQueryString = params => {
 
 const fetchProfileFavorites = (token) => {
   return new Promise( (resolve, reject) => {
-    requests.favorites(token, (err, res) => {
-      if (err) return reject(err);
+    return requests.favorites(token)
+      .then( (res) => {
+      console.log('Got favorites', res);
       const arr = {};
-      for (const item of res.body.profile.favoriteLocations) {
+      for (const item of res.profile.favoriteLocations) {
         arr[item.name] = {
           latitude: item.lat,
           longitude: item.lon,
@@ -118,7 +119,7 @@ const filterPT = (itineraries) => {
 
 const runFactors = (event, context, callback) => {
   if (!event.queryStringParameters) {
-    return callback(null, { statusCode: 403, body: 'Expected something else'} );
+    return Promise.resolve( { statusCode: 403, body: 'Expected something else'} );
   }
   const redirect = event.queryStringParameters['redirect_uri'];
   const address = event.queryStringParameters['address'];
@@ -130,7 +131,8 @@ const runFactors = (event, context, callback) => {
     phone = `+${unescape(phone)}`;
     let code = event.queryStringParameters['code'];
     console.log('Logging in with', phone, code)
-    requests.login(phone, code, function (error, response, body) {
+    return requests.login(phone, code)
+      .then( (response) => {
       const retVal = {
         statusCode: 301,
         body: '',
@@ -139,61 +141,50 @@ const runFactors = (event, context, callback) => {
           Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
         }
       };
-      if (error || response.statusCode !== 200) {
-        console.log('Error while logging in', error, 'redirecting to home', retVal);
-
-        return callback(null, retVal);
-      }
       var address = JSON.parse(event.queryStringParameters.address);
-      bot.beginDialog(address, '/persistUserData', body, function (error) {
-        retVal.statusCode = 301;
-        
-        if (error) {
-          console.log('Error persisting accounts', error, address);
-          retVal.headers = {
-            Location: `${redirect}` //error in linking
+      return new Promise( (resolve, reject) => {
+        bot.beginDialog(address, '/persistUserData', response, (error, resp) => {
+          if (error) {
+            console.log('ERROR: Redirecting to', retVal.headers.Location);
+            return reject(retVal);
           }
-        } else {
-          retVal.headers = {
-            Location: `${redirect}&authorization_code=${phone.replace('+', '')}`
-          }
-        }
-        console.log('Redirecting to', retVal.headers.Location);
-        retVal.body = '';
-        return callback(null, retVal);
+          console.log('SUCCESS: Redirecting to', retVal.headers.Location);
+          retVal.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
+          return resolve(retVal);
+        });
       });
     });
-
   } else if (path === '/factor1') {
    
     phone = unescape(phone);
     console.log('requesting code for', phone)
 
-    requests.requestCode(phone, function (error, response, body) {
+    return requests.requestCode(phone)
+      .then( (response, body) => {
       const retVal = {
         statusCode: 301,
         body: '',
       };
-      if (error || response.statusCode !== 200) {
-        retVal.headers = {
-          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-        }
-        return callback(null, retVal);
-      }
+      
       //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
       retVal.headers = {
         Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
       }
       console.log('Redirecting to', retVal.headers);
       retVal.body = '';
-      return callback(null, retVal);
+      return retVal;
+    })
+    .catch( err => {
+      return {
+        statusCode: 301, 
+        headers: {
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
+        }  
+      }
     });
+
   } else {
-    const retVal = {
-      statusCode: 403
-    };
-    console.log('Why did I not find any useful things?', 'phone is', phone, 'address', address);
-    return callback(null, retVal);
+    return Promise.reject({ statusCode: 404 });
   }
 };
 
@@ -330,45 +321,44 @@ const filterGeoCollection = coll => {
 
 bot.dialog('/geosearch', [
   (session, text) => {
-    requests.geocode(text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
-        const location = filterGeoCollection(results.body);
-        console.log('Results from search are', results.body, 'filtered as', location);
-        if (err || !location) {
-          console.log('ERROR', err);
-          return session.endDialog('Could not find that location. Try again.');
-        } else {
-          const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
-          console.log('Requesting a static map from', googleURL);
-          const message = new builder.Message(session)
-              .sourceEvent({
-                facebook: {
-                  attachment: {
-                    type: 'template',
-                    payload: {
-                      template_type: 'generic',
-                      elements: [{
-                        title: location.name,
-                        image_url: googleURL,
-                      }]
-                    }
+    requests.geocode(text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
+        const location = filterGeoCollection(results);
+        console.log('Results from search are', results, 'filtered as', location);
+        if (!location) return Promise.reject('Could not find location');
+        const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
+        console.log('Requesting a static map from', googleURL);
+        const message = new builder.Message(session)
+            .sourceEvent({
+              facebook: {
+                attachment: {
+                  type: 'template',
+                  payload: {
+                    template_type: 'generic',
+                    elements: [{
+                      title: location.name,
+                      image_url: googleURL,
+                    }]
                   }
                 }
-              });
-      
-          session.send(message);
-          
-          session.dialogData.location = location;
-          builder.Prompts.choice(session,
-            `Use ${location.name} as starting point?`,
-            {
-              OK: session.dialogData.location,
-              Retry: {},
-            },
-            {
-              maxRetries: 0
+              }
             });
-        }
-      });
+    
+        session.send(message);
+        
+        session.dialogData.location = location;
+        builder.Prompts.choice(session,
+          `Use ${location.name} as starting point?`,
+          {
+            OK: session.dialogData.location,
+            Retry: {},
+          },
+          {
+            maxRetries: 0
+          });
+      })
+      .catch( err => {
+        session.endDialog('Could not find that location');
+      } );
   },
   (session, options) => {
     if (!options.response) {
@@ -451,14 +441,13 @@ bot.dialog('/food', [
     }
     session.dialogData.fromLocation = location;
     session.sendTyping();
-    requests.places(kind, location.latitude, location.longitude, (err, results) => {
-      if (err) { return session.endDialog('Error when looking for restaurants'); }
-      if (!results.body.businesses || results.body.businesses.length < 1 ) {
+    requests.places(kind, location.latitude, location.longitude).then( (results) => {
+      if (!results.businesses || results.businesses.length < 1 ) {
         return session.endDialog(`Did not find those in ${location.name}. Please try another place.`);
       }
       const choices = {};
-      const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
-      const choice = results.body.businesses[rand];
+      const rand = Math.floor(Math.random() * 100) % results.businesses.length;
+      const choice = results.businesses[rand];
       console.log('Selected option', choice);
       if (!choice.rating) {
         choice.rating = '-';
@@ -501,6 +490,9 @@ bot.dialog('/food', [
           }
       );
     })
+    .catch( err => {
+      return session.endDialog('Error searching, try again.');
+    });
   },
   (session, options) => {
     console.log('Selection was', options);
@@ -551,14 +543,13 @@ bot.dialog('/location', [
       session.sendTyping();
       requests.routes(
         fromLocation, toLocation,
-        session.userData.user.id_token,
-        function (error, response, body) {
-          session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
-          session.dialogData.ptPlan = filterPT(body.plan.itineraries);
+        session.userData.user.id_token).then( response => {
+          session.dialogData.taxiPlan = filterTaxi(response.plan.itineraries);
+          session.dialogData.ptPlan = filterPT(response.plan.itineraries);
           if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
             return session.endDialog(`Did not find routes to ${toLocation.name}`);
           }
-          session.send('Found ' + body.plan.itineraries.length + ' routes');
+          session.send('Found ' + response.plan.itineraries.length + ' routes');
           const topItin = session.dialogData.ptPlan;
           console.log('Itinerary', topItin);
           const choices = {};
@@ -602,13 +593,13 @@ bot.dialog('/location', [
           return session.endDialog('Ok - please send a new place');
       }
       if(plan) {
-        return requests.book(plan, session.userData.user.id_token, (err, res) => {
-          if (err) {
-            console.log('ERROR booking trip', err);
-            return session.endDialog('Error booking your trip');
-          }
+        return requests.book(plan, session.userData.user.id_token).then( res => {
           return session.endDialog('Your ride is booked - check your Whim-app!');
         })
+        .catch( err => {
+            console.log('ERROR booking trip', err);
+            return session.endDialog('Error booking your trip');
+        });
       }
     } 
     return session.endDialog('Ok. Please throw an another challenge!');
@@ -649,10 +640,10 @@ bot.dialog('/destination', [
     } else if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
-      return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
-        console.log('Results from search are', results.body);
-        const location = filterGeoCollection(results.body);
-        if (err || !location) {
+      return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
+        console.log('Results from search are', results);
+        const location = filterGeoCollection(results);
+        if (!location) {
           console.log('ERROR', err);
           session.send('Did not understand the sent location - please try again');
           session.replaceDialog('/destination', session.dialogData.choices);
@@ -708,17 +699,12 @@ bot.dialog('/destination', [
 ]);
 
 bot.dialog('/logout', function (session) {
-  requests.unlink(session.message.address.user.id, function (error, response, body) {
-    if (!error && response.statusCode === 200) {
-      // No need to do anything send anything to the user
-      // in the success case since we respond only after
-      // we have received the account unlinking webhook
-      // event from Facebook.
+  requests.unlink(session.message.address.user.id).then(response => {
       session.endDialog();
-    } else {
+    })
+    .catch( () => {
       session.endDialog('Error while unlinking account');
-    }
-  });
+    });
 });
 
 // Mapping between the action `logout` (defined in `persistent-menu.json`)
@@ -732,12 +718,9 @@ bot.beginDialogAction('logout', '/logout');
 // 1st and 2nd factor auth
 module.exports.factors = (event, context, callback) => {
   console.log('factors', event);
-  try {
-    runFactors(event, context, callback);
-  } catch (e) {
-    console.log('Exception', e);
-    callback(null, {statusCode: 500, body: e.message});
-  }
+  runFactors(event, context)
+    .then( res => callback(null, res) )
+    .catch( err => callback(null, err) );
 }
 
 // restify mock for lambda

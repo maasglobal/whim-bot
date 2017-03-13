@@ -1,5 +1,6 @@
 WHIM_API_KEY: ershtdjysgthstha
 WHIM_API_URL: https://api.whimapp.global
+BOT_LOGO_URL: https://http.cat/200
 XBOT_FRONTEND_URL: https://<id>.ngrok.io 
 BOT_FRONTEND_URL: https://<id>.execute-api.eu-west-1.amazonaws.com/dev
 MICROSOFT_APP_ID: <id>
