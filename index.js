@@ -27,12 +27,43 @@ const intents = new builder.IntentDialog();
 intents.matches('cancel', '/cancel');
 intents.matches('quit', '/cancel');
 intents.matches('exit', '/cancel');
+intents.matches('help', '/help');
+intents.matches('hi', '/help');
+intents.matches('hi!', '/help');
+intents.matches('hello', '/help');
 
-// restify mock for lambda
-module.exports.listener = (event, context, callback) => {
-  console.log('Mock Listener handler called with event', event);
-  const mock = require('./serverless.js')(listener);
-  return mock.post(event, context, callback);
+const msToTime = duration => {
+    var seconds = parseInt((duration/1000)%60)
+        , minutes = parseInt((duration/(1000*60))%60)
+        , hours = parseInt((duration/(1000*60*60))%24);
+
+    //hours = (hours < 10) ? "0" + hours : hours;
+    //minutes = (minutes < 10) ? "0" + minutes : minutes;
+    if (hours > 0) {
+      return `${hours}h ${minutes}min`;
+    } else {
+      return `${minutes}min`;
+    }
+}
+
+const parseLeaveTime = startTime => {
+    var seconds = parseInt((startTime/1000)%60)
+        , minutes = parseInt((startTime/(1000*60))%60)
+        , hours = parseInt((startTime/(1000*60*60))%24);
+
+    //hours = (hours < 10) ? "0" + hours : hours;
+    //minutes = (minutes < 10) ? "0" + minutes : minutes;
+    if (hours > 0) {
+      return `${hours}h ${minutes}min`;
+    } else {
+      return `${minutes}min`;
+    }
+}
+
+const calcDuration = itinerary => {
+  if (!itinerary || !itinerary.startTime) return -1;
+  const diff = itinerary.endTime - itinerary.startTime;
+  return msToTime(diff); 
 }
 
 const concatenateQueryString = params => {
@@ -85,9 +116,10 @@ const filterPT = (itineraries) => {
   return ret;
 }
 
-// 1st and 2nd factor auth
-module.exports.factors = (event, context, callback) => {
-  console.log('factors', event);
+const runFactors = (event, context, callback) => {
+  if (!event.queryStringParameters) {
+    return callback(null, { statusCode: 403, body: 'Expected something else'} );
+  }
   const redirect = event.queryStringParameters['redirect_uri'];
   const address = event.queryStringParameters['address'];
   const token = event.queryStringParameters['account_linking_token'];
@@ -174,6 +206,11 @@ bot.dialog('/cancel', session => {
   session.endConversation();
 });
 
+bot.dialog('/help', session => {
+  session.send('Hi, this is the Whim Bot. First, type a location or send your current location via the Messenger app (+) menu. Then the Whim Bot will walk you through the process of selecting the destination location, and planning the trip to the destination.')
+  session.endDialog('Where is your starting point?')
+});
+
 bot.dialog('/', intents);
 
 var handleAccountLinking = function (session) {
@@ -185,8 +222,7 @@ var handleAccountLinking = function (session) {
   var username = accountLinking.authorization_code;
   var authorizationStatus = accountLinking.status;
   if (authorizationStatus === 'linked') {
-    
-    session.endDialog('Account linked - you are now known as ' + username);
+    session.beginDialog('/help');
   } else if (authorizationStatus === 'unlinked') {
     // Remove user from the userData
     delete session.userData.user;
@@ -222,7 +258,12 @@ intents.onDefault(function (session) {
         case 'cancel':
         case 'hello':
         case 'hi':
-          return session.endDialog('To request a ride, please send your location');
+        case 'hi!':
+        case 'yo!':
+        case 'yo':
+        case 'help':
+        case 'help!':
+          return session.beginDialog('/help');;
         default:
           break;
       }
@@ -230,7 +271,7 @@ intents.onDefault(function (session) {
       session.sendTyping();
       return session.beginDialog('/geosearch', session.message.text);
     }
-    session.endDialog('To request a ride, please send your location');
+    return session.beginDialog('/help'); //('To request a ride, please send your location');
   } else {
     session.endDialog('I am currently expecting to be called from Facebook Messenger');
   }
@@ -344,19 +385,19 @@ bot.dialog('/geosearch', [
 bot.dialog('/options', [(session, fromLocation) => {
   session.dialogData.fromLocation = fromLocation;
   session.dialogData.choices = {
-    routes: {
+    Routes: {
 
     },
-    restaurants: {
+    'Whim Car': {
 
     },
-    pizza: {
+    Restaurants: {
 
-    }
+    },
   };
   builder.Prompts.choice(
       session,
-      `Select what to search from ${fromLocation.name}, or type something else like 'italian'`,
+      `Select what to search from ${fromLocation.name}, or type something else like 'italian' or 'indian'`,
       session.dialogData.choices,
       {
         maxRetries: 0
@@ -372,6 +413,8 @@ bot.dialog('/options', [(session, fromLocation) => {
       case 0:
         return session.beginDialog('/location', param); 
       case 1:
+        console.log('Whim Car selected');
+        return session.beginDialog('/whimcar', session.dialogData.fromLocation); 
       case 2:
         console.log('Moving to /food to search for', param);
         return session.beginDialog('/food', param); 
@@ -387,6 +430,14 @@ bot.dialog('/options', [(session, fromLocation) => {
   }
 }
 ]);
+
+bot.dialog('/whimcar', [
+  (session, toLocation) => {
+    session.dialogData.toLocation = toLocation;
+    return session.endDialog(`Sorry, Whim Car isn't yet implemented`);
+  }
+]);
+
 const kFormatter = num => {
     return num > 999 ? (num/1000).toFixed(1) + 'k' : Math.floor(num) + 'm'
 }
@@ -396,14 +447,14 @@ bot.dialog('/food', [
     const kind = location.kind;
     console.log(kind, 'for location', location);
     if (!location) {
-      return session.endDialog('Need a location');
+      return session.endDialog('Need to specify a location');
     }
     session.dialogData.fromLocation = location;
     session.sendTyping();
     requests.places(kind, location.latitude, location.longitude, (err, results) => {
-      if (err) { return session.endDialog('Error finding restaurants'); }
+      if (err) { return session.endDialog('Error when looking for restaurants'); }
       if (!results.body.businesses || results.body.businesses.length < 1 ) {
-        return session.endDialog('Did not find restaurants');
+        return session.endDialog(`Did not find those in ${location.name}. Please try another place.`);
       }
       const choices = {};
       const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
@@ -411,6 +462,9 @@ bot.dialog('/food', [
       console.log('Selected option', choice);
       if (!choice.rating) {
         choice.rating = '-';
+      }
+      if (!choice.price) {
+        choice.price = '-';
       }
       const message = new builder.Message(session)
           .sourceEvent({
@@ -435,12 +489,12 @@ bot.dialog('/food', [
           });
   
       session.send(message);
-      choices[choice.name] = choice;
+      choices[`Select ${choice.name}`] = choice;
       choices['Shuffle again!'] = {};
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          'Make a selection',
+          'Please select one option',
           choices,
           {
             maxRetries: 0
@@ -451,7 +505,8 @@ bot.dialog('/food', [
   (session, options) => {
     console.log('Selection was', options);
     if (options.response && options.response.index === 0) {
-      const coords = Object.assign( { name: options.response.entity }, session.dialogData.choices[options.response.entity].coordinates);
+      const choice = session.dialogData.choices[options.response.entity];
+      const coords = Object.assign( { name: choice.name }, choice.coordinates);
       const fromLocation = session.dialogData.fromLocation;
       fromLocation.toLocation = coords;
       return session.beginDialog('/location', fromLocation );     
@@ -459,7 +514,11 @@ bot.dialog('/food', [
     if (options.response && options.response.index === 1) {
       return session.replaceDialog('/food', session.dialogData.fromLocation);     
     } 
-    return session.endDialog('Ok, where else would you like to look?');     
+    if (session.message.text === 'help' || session.message.text === 'quit') {
+      return session.replaceDialog('/help');
+    }
+    session.send('Ok, what else would you like to look from?');     
+    return session.replaceDialog('/options', session.dialogData.fromLocation);     
   }
 ])
 
@@ -467,7 +526,7 @@ bot.dialog('/location', [
   function (session, fromLocation) {
     session.dialogData.fromLocation = fromLocation;
     console.log('fromLocation', fromLocation);
-    session.send(`Planning a route from ${fromLocation.name}`);
+    //session.send(`Planning a route from ${fromLocation.name}`);
     session.sendTyping();
     if (fromLocation && fromLocation.toLocation) {
         return session.beginDialog('/destination', fromLocation);
@@ -496,13 +555,31 @@ bot.dialog('/location', [
         function (error, response, body) {
           session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
           session.dialogData.ptPlan = filterPT(body.plan.itineraries);
-          if (!session.dialogData.ptPlan) {
+          if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
             return session.endDialog(`Did not find routes to ${toLocation.name}`);
-          } 
+          }
           session.send('Found ' + body.plan.itineraries.length + ' routes');
           const topItin = session.dialogData.ptPlan;
           console.log('Itinerary', topItin);
-          builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport option - ${topItin.fare.points} points?`);
+          const choices = {};
+          if (topItin) {
+            choices['Public Transport'] = {};
+            session.send(`Public Transport ${topItin.fare.points}p, ${calcDuration(topItin)}`);
+          }
+          if (session.dialogData.taxiPlan) {
+            choices['TAXI'] = {};
+            session.send(`Or TAXI ${session.dialogData.taxiPlan.fare.points}p, ${calcDuration(session.dialogData.taxiPlan)}`);
+          }
+          choices.Cancel = {};
+          builder.Prompts.choice(
+            session,
+            `Book a ride to ${toLocation.name}?`,
+            choices,
+            {
+              maxRetries: 0
+            }
+          );
+          //builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport option - ${topItin.fare.points} points?`);
         }
       );
     }
@@ -512,37 +589,30 @@ bot.dialog('/location', [
       // TODO: Continue based on the response
       // FIXME Continue how?
       console.log('Response to the session is', results);
-      return requests.book(session.dialogData.ptPlan, session.userData.user.id_token, (err, res) => {
-        if (err) {
-          console.log('ERROR booking trip', err);
-          return session.endDialog('Error booking your trip');
-        }
-        return session.endDialog('Your ride is booked - check your Whim-app!');
-      })
-      
+      let plan = null;
+      switch (results.response.entity) {
+        case 'Public Transport':
+          plan = session.dialogData.ptPlan;
+          break;
+        case 'TAXI':
+          plan = session.dialogData.taxiPlan;
+          break;
+        case 2:
+        default:
+          return session.endDialog('Ok - please send a new place');
+      }
+      if(plan) {
+        return requests.book(plan, session.userData.user.id_token, (err, res) => {
+          if (err) {
+            console.log('ERROR booking trip', err);
+            return session.endDialog('Error booking your trip');
+          }
+          return session.endDialog('Your ride is booked - check your Whim-app!');
+        })
+      }
     } 
-    if (session.dialogData.taxiPlan) {
-      const topItin = session.dialogData.taxiPlan;
-      return builder.Prompts.confirm(session, `Do you want to order a TAXI instead - ${topItin.fare.points} points?`);
-    }
     return session.endDialog('Ok. Please throw an another challenge!');
   },
-  function (session, results) {
-    console.log('')
-    if (results.response) {
-      // TODO: Continue based on the response
-      // FIXME Continue how?
-      console.log('Response to the Taxi question is', results);
-      return requests.book(session.dialogData.taxiPlan, session.userData.user.id_token, (err, res) => {
-        if (err) {
-          console.log('ERROR booking trip', err);
-          return session.endDialog('Error booking your trip');
-        }
-        return session.endDialog('Your ride is booked - check your Whim-app!');
-      })
-    } 
-    session.endDialog('Ok, please select another starting point!');
-  }
 ]);
 
 
@@ -655,3 +725,24 @@ bot.dialog('/logout', function (session) {
 // and the /logout dialog defined above.
 bot.beginDialogAction('logout', '/logout');
 
+/**
+ * Handler functions exported from the module
+ */
+
+// 1st and 2nd factor auth
+module.exports.factors = (event, context, callback) => {
+  console.log('factors', event);
+  try {
+    runFactors(event, context, callback);
+  } catch (e) {
+    console.log('Exception', e);
+    callback(null, {statusCode: 500, body: e.message});
+  }
+}
+
+// restify mock for lambda
+module.exports.listener = (event, context, callback) => {
+  console.log('Mock Listener handler called with event', event);
+  const mock = require('./serverless.js')(listener);
+  return mock.post(event, context, callback);
+}

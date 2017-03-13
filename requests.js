@@ -154,3 +154,29 @@ module.exports.places = (str, lat, lon, callback) => {
     json: true
   }, callback);
 };
+
+module.exports.localTime = (lat, lon, utcTime, callback) => {
+  const url = `https://maps.googleapis.com/maps/api/timezone/json`;
+  request({
+    url: url,
+    qs: {
+      lat: lat,
+      lon: lon,
+      timestamp: utcTime,
+    },
+    json: true
+  }, callback);
+}
+
+module.exports.whimCarAvailability = (lat, lon, utcTime, callback) => {
+  const url = `https://maps.googleapis.com/maps/api/timezone/json`;
+  request({
+    url: url,
+    qs: {
+      lat: lat,
+      lon: lon,
+      timestamp: utcTime,
+    },
+    json: true
+  }, callback);
+}

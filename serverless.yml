@@ -24,6 +24,7 @@ provider:
     WHIM_API_KEY: ${file(./dev-env.yml):WHIM_API_KEY}
     WHIM_API_URL: ${file(./dev-env.yml):WHIM_API_URL}
     BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
+    BOT_LOGO_URL: ${file(./dev-env.yml):BOT_LOGO_URL}
     MICROSOFT_APP_ID: ${file(./dev-env.yml):MICROSOFT_APP_ID}
     MICROSOFT_APP_PASSWORD: ${file(./dev-env.yml):MICROSOFT_APP_PASSWORD}
     YELP_APP_ID: ${file(./dev-env.yml):YELP_APP_ID}
@@ -75,6 +76,9 @@ functions:
   static:
     handler: responses.index
     events:
+      - http: 
+          path: style.css
+          method: get
       - http: 
           path: index.html
           method: get
