@@ -1,5 +1,7 @@
+'use strict';
 /**
  * Serverless adapter for bot framework
+ * @author Ville Rantala <ville.rantala@microsoft.com>
  */
 
 module.exports = function (listener) {
@@ -14,7 +16,6 @@ module.exports = function (listener) {
           body: body || ''
         });
       };
-
       var req = {
         body: JSON.parse(event.body),
         headers: event.headers

@@ -1,11 +1,15 @@
 'use strict';
 /**
  * Whim-Bot main handler
+ * @author Sami Pippuri <sami.pippuri@maas.global>
+ * @author Ville Rantala <ville.rantala@microsoft.com>
+ * LICENSE: MIT
  */
 
 const builder = require('botbuilder');
 const requests = require('./requests.js');
-const Promise = require('bluebird');
+const utils = require('./utils');
+const _ = require('lodash');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
@@ -27,30 +31,18 @@ const intents = new builder.IntentDialog();
 intents.matches('cancel', '/cancel');
 intents.matches('quit', '/cancel');
 intents.matches('exit', '/cancel');
+intents.matches('help', '/help');
+intents.matches('hi', '/help');
+intents.matches('hi!', '/help');
+intents.matches('hello', '/help');
 
-// restify mock for lambda
-module.exports.listener = (event, context, callback) => {
-  console.log('Mock Listener handler called with event', event);
-  const mock = require('./serverless.js')(listener);
-  return mock.post(event, context, callback);
-}
-
-const concatenateQueryString = params => {
-  const ret = [];
-  Object.keys(params).map( key => {
-    const val = params[key];
-    ret.push( `${key}=${encodeURIComponent(val)}` );
-  });
-
-  return ret.join('&');
-}
-
-const fetchProfileFavorites = (token) => {
+const fetchProfileFavorites = token => {
   return new Promise( (resolve, reject) => {
-    requests.favorites(token, (err, res) => {
-      if (err) return reject(err);
+    return requests.favorites(token)
+      .then( (res) => {
+      console.log('Got favorites', res);
       const arr = {};
-      for (const item of res.body.profile.favoriteLocations) {
+      for (const item of res.profile.favoriteLocations) {
         arr[item.name] = {
           latitude: item.lat,
           longitude: item.lon,
@@ -62,108 +54,7 @@ const fetchProfileFavorites = (token) => {
   });
 }
 
-const filterTaxi = (itineraries) => {
-  let ret = undefined;
-  for (const item of itineraries) {
-    console.log('Looking for TAXI itinerary', item);
-    if (item.legs[0].mode === 'TAXI') {
-      console.log('Found a TAXI itinerary', item);
-      ret = item;
-    }
-  }
-  return ret;  
-}
-
-const filterPT = (itineraries) => {
-  let ret = undefined;
-  console.log('TODO: filterPT for the best match/score!!');
-  for (const item of itineraries) {
-    if (!ret && item.fare.points !== null) {
-      ret = item;
-    }
-  }
-  return ret;
-}
-
-// 1st and 2nd factor auth
-module.exports.factors = (event, context, callback) => {
-  console.log('factors', event);
-  const redirect = event.queryStringParameters['redirect_uri'];
-  const address = event.queryStringParameters['address'];
-  const token = event.queryStringParameters['account_linking_token'];
-  var phone = event.queryStringParameters['phone'];
-  const path = event.path;
-
-  if (path === '/factor2') {
-    phone = `+${unescape(phone)}`;
-    let code = event.queryStringParameters['code'];
-    console.log('Logging in with', phone, code)
-    requests.login(phone, code, function (error, response, body) {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-        headers: {
-          'Content-Type': 'text/html',
-          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-        }
-      };
-      if (error || response.statusCode !== 200) {
-        console.log('Error while logging in', error, 'redirecting to home', retVal);
-
-        return callback(null, retVal);
-      }
-      var address = JSON.parse(event.queryStringParameters.address);
-      bot.beginDialog(address, '/persistUserData', body, function (error) {
-        retVal.statusCode = 301;
-        
-        if (error) {
-          console.log('Error persisting accounts', error, address);
-          retVal.headers = {
-            Location: `${redirect}` //error in linking
-          }
-        } else {
-          retVal.headers = {
-            Location: `${redirect}&authorization_code=${phone.replace('+', '')}`
-          }
-        }
-        console.log('Redirecting to', retVal.headers.Location);
-        retVal.body = '';
-        return callback(null, retVal);
-      });
-    });
-
-  } else if (path === '/factor1') {
-   
-    phone = unescape(phone);
-    console.log('requesting code for', phone)
-
-    requests.requestCode(phone, function (error, response, body) {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-      };
-      if (error || response.statusCode !== 200) {
-        retVal.headers = {
-          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-        }
-        return callback(null, retVal);
-      }
-      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
-      retVal.headers = {
-        Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-      }
-      console.log('Redirecting to', retVal.headers);
-      retVal.body = '';
-      return callback(null, retVal);
-    });
-  } else {
-    const retVal = {
-      statusCode: 403
-    };
-    console.log('Why did I not find any useful things?', 'phone is', phone, 'address', address);
-    return callback(null, retVal);
-  }
-};
+bot.dialog('/', intents);
 
 bot.dialog('/persistUserData', function (session, data) {
   session.userData.user = data;
@@ -174,19 +65,22 @@ bot.dialog('/cancel', session => {
   session.endConversation();
 });
 
-bot.dialog('/', intents);
+bot.dialog('/help', session => {
+  session.send('Hi, this is the Whim Bot. First, type a location or send your current location via the Messenger app (+) menu. Then the Whim Bot will walk you through the process of selecting the destination location, and planning the trip to the destination.')
+  session.endDialog('Where is your starting point?')
+});
 
-var handleAccountLinking = function (session) {
-  var accountLinking = session.message.sourceEvent.account_linking;
+const handleAccountLinking = session => {
+  console.log('handleAccountLinking', session);
+  const accountLinking = session.message.sourceEvent.account_linking;
   // This is the handling for the `Account Linking webhook event` where we could
   // verify the authorization_code and that the linking was successful.
   // The authorization_code is the value we passed above and
   // status has value `linked` in case the linking succeeded.
-  var username = accountLinking.authorization_code;
-  var authorizationStatus = accountLinking.status;
+  const username = accountLinking.authorization_code;
+  const authorizationStatus = accountLinking.status;
   if (authorizationStatus === 'linked') {
-    
-    session.endDialog('Account linked - you are now known as ' + username);
+    session.beginDialog('/help');
   } else if (authorizationStatus === 'unlinked') {
     // Remove user from the userData
     delete session.userData.user;
@@ -196,18 +90,19 @@ var handleAccountLinking = function (session) {
   }
 };
 
-intents.onDefault(function (session) {
+intents.onDefault( session => {
+  console.log('OnDefault', session.message);
   if (session.message.source === 'facebook') {
     if (session.message.sourceEvent.account_linking) {
       handleAccountLinking(session);
       return;
     }
-    var storedUser = session.userData.user;
+    const storedUser = session.userData.user;
     if (!storedUser) {
       session.beginDialog('/welcome');
       return;
     }
-    var entities = session.message.entities;
+    const entities = session.message.entities;
     console.log('Entities received are', entities);
 
     if (entities.length > 0 && entities[0].geo) {
@@ -217,20 +112,16 @@ intents.onDefault(function (session) {
     }
     if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       // TODO recognize natural language
-      switch (session.message.text.toLowerCase()) {
-        case 'quit':
-        case 'cancel':
-        case 'hello':
-        case 'hi':
-          return session.endDialog('To request a ride, please send your location');
-        default:
-          break;
+      if (['quit','exit','cancel','hello','hi','hi!','yo','yo!','help','help!']
+            .indexOf(session.message.text.toLowerCase()) !== -1) {
+        console.log('Help wanted');
+        return session.beginDialog('/help');
       }
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
       return session.beginDialog('/geosearch', session.message.text);
     }
-    session.endDialog('To request a ride, please send your location');
+    return session.beginDialog('/help'); //('To request a ride, please send your location');
   } else {
     session.endDialog('I am currently expecting to be called from Facebook Messenger');
   }
@@ -246,8 +137,9 @@ bot.dialog('/welcome', function (session) {
           payload: {
             template_type: 'generic',
             elements: [{
-              title: 'Welcome to Whim',
-              image_url: 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
+              title: 'Welcome to Whim Bot',
+              subtitle: 'Please log in with your Whim account',
+              image_url: process.env.LOGO_URL || 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
               buttons: [{
                 type: 'account_link',
                 url: FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address)
@@ -260,74 +152,46 @@ bot.dialog('/welcome', function (session) {
   session.endDialog(message);
 });
 
-const filterGeoCollection = coll => {
-  if (!coll || !coll.features || coll.features.length < 1) {
-    console.log('This wasnt a feature collection');
-    return null;
-  }
-  for (const feature of coll.features) {
-    if (feature.type === 'Feature' && 
-        feature.properties && 
-        feature.properties.name && 
-        feature.geometry) {
-          console.log('Found a match', JSON.stringify(feature));
-      let name = `${feature.properties.name}`;
-      if (feature.properties.zipCode && feature.properties.city) {
-        name += `(${feature.properties.zipCode} ${feature.properties.city})`;
-      }
-      return {
-        latitude: feature.geometry.coordinates[0],
-        longitude: feature.geometry.coordinates[1],
-        name: name
-      }
-    } else {
-       console.log('failed', feature.type, feature.properties, feature.properties.name, feature.geometry);
-    }
-  }
-  return null;
-}
-
 bot.dialog('/geosearch', [
   (session, text) => {
-    requests.geocode(text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
-        const location = filterGeoCollection(results.body);
-        console.log('Results from search are', results.body, 'filtered as', location);
-        if (err || !location) {
-          console.log('ERROR', err);
-          return session.endDialog('Could not find that location. Try again.');
-        } else {
-          const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
-          console.log('Requesting a static map from', googleURL);
-          const message = new builder.Message(session)
-              .sourceEvent({
-                facebook: {
-                  attachment: {
-                    type: 'template',
-                    payload: {
-                      template_type: 'generic',
-                      elements: [{
-                        title: location.name,
-                        image_url: googleURL,
-                      }]
-                    }
+    requests.geocode(text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
+        const location = utils.filterGeoCollection(results);
+        console.log('Results from search are', results, 'filtered as', location);
+        if (!location) return Promise.reject('Could not find location');
+        const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
+        console.log('Requesting a static map from', googleURL);
+        const message = new builder.Message(session)
+            .sourceEvent({
+              facebook: {
+                attachment: {
+                  type: 'template',
+                  payload: {
+                    template_type: 'generic',
+                    elements: [{
+                      title: location.name,
+                      image_url: googleURL,
+                    }]
                   }
                 }
-              });
-      
-          session.send(message);
-          
-          session.dialogData.location = location;
-          builder.Prompts.choice(session,
-            `Use ${location.name} as starting point?`,
-            {
-              OK: session.dialogData.location,
-              Retry: {},
-            },
-            {
-              maxRetries: 0
+              }
             });
-        }
-      });
+    
+        session.send(message);
+        
+        session.dialogData.location = location;
+        builder.Prompts.choice(session,
+          `Use ${location.name} as starting point?`,
+          {
+            OK: session.dialogData.location,
+            Retry: {},
+          },
+          {
+            maxRetries: 0
+          });
+      })
+      .catch( err => {
+        session.endDialog('Could not find that location');
+      } );
   },
   (session, options) => {
     if (!options.response) {
@@ -344,19 +208,19 @@ bot.dialog('/geosearch', [
 bot.dialog('/options', [(session, fromLocation) => {
   session.dialogData.fromLocation = fromLocation;
   session.dialogData.choices = {
-    routes: {
+    Routes: {
 
     },
-    restaurants: {
+    'Whim Car': {
 
     },
-    pizza: {
+    Restaurants: {
 
-    }
+    },
   };
   builder.Prompts.choice(
       session,
-      `Choose action (${fromLocation.name} as starting point)`,
+      `Select what to search from ${fromLocation.name}, or type something else like 'italian' or 'indian'`,
       session.dialogData.choices,
       {
         maxRetries: 0
@@ -372,6 +236,8 @@ bot.dialog('/options', [(session, fromLocation) => {
       case 0:
         return session.beginDialog('/location', param); 
       case 1:
+        console.log('Whim Car selected');
+        return session.beginDialog('/whimcar', session.dialogData.fromLocation); 
       case 2:
         console.log('Moving to /food to search for', param);
         return session.beginDialog('/food', param); 
@@ -387,8 +253,68 @@ bot.dialog('/options', [(session, fromLocation) => {
   }
 }
 ]);
+
+bot.dialog('/whimcar', [
+  (session, toLocation) => {
+    session.dialogData.toLocation = toLocation;
+    return session.endDialog(`Sorry, Whim Car isn't yet implemented`);
+  }
+]);
+
 const kFormatter = num => {
     return num > 999 ? (num/1000).toFixed(1) + 'k' : Math.floor(num) + 'm'
+}
+const nearestBusiness = items => {
+  if (!items || items.length === 0) return null;
+  const furthest = _.maxBy(items, item => item.distance );
+  const distanceScore = furthest.distance % 100;
+  items.map( item => {
+    const rating = item.rating ? item.rating : 2.5;
+    item.score = ((rating * 100) - (item.distance / distanceScore));
+  });
+  const max = _.maxBy(items, item => item.score);
+  return max;
+}
+
+const randomBusiness = items => {
+  // first, order them based on scores calculated above
+  const sorted = _.sortBy(items, item => item.score);
+  const rand = Math.floor(Math.random() * 1000) % (items.length);
+  const choice = items[Math.floor(rand / 2)]; // top half of the sorted array
+  console.log('Random business selected is', choice);
+  return choice;
+}
+
+const sendYelp = (session, choice, kind) => {
+  if (!choice.rating) {
+    choice.rating = '-';
+  }
+  if (!choice.price) {
+    choice.price = '-';
+  }
+  const message = new builder.Message(session)
+        .sourceEvent({
+          facebook: {
+            attachment: {
+              type: 'template',
+              payload: {
+                template_type: 'generic',
+                elements: [{
+                  title: `${kind}: ${choice.name}`,
+                  subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
+                  image_url: choice.image_url,
+                  buttons: [{
+                    type: 'web_url',
+                    url: choice.url,
+                    title: 'Visit Yelp Site'
+                  }]
+                }]
+              }
+            }
+          }
+        });
+
+    session.send(message);
 }
 
 bot.dialog('/food', [
@@ -396,67 +322,53 @@ bot.dialog('/food', [
     const kind = location.kind;
     console.log(kind, 'for location', location);
     if (!location) {
-      return session.endDialog('Need a location');
+      return session.endDialog('Need to specify a location');
     }
     session.dialogData.fromLocation = location;
-    session.sendTyping();
-    requests.places(kind, location.latitude, location.longitude, (err, results) => {
-      if (err) { return session.endDialog('Error finding restaurants'); }
-      if (!results.body.businesses || results.body.businesses.length < 1 ) {
-        return session.endDialog('Did not find restaurants');
+    requests.places(kind, location.latitude, location.longitude).then( (results) => {
+      if (!results.businesses || results.businesses.length < 1 ) {
+        return session.endDialog(`Did not find those in ${location.name}. Please try another place.`);
       }
       const choices = {};
-      const rand = Math.floor(Math.random() * 100) % results.body.businesses.length;
-      const choice = results.body.businesses[rand];
-      console.log('Selected option', choice);
-      const message = new builder.Message(session)
-          .sourceEvent({
-            facebook: {
-              attachment: {
-                type: 'template',
-                payload: {
-                  template_type: 'generic',
-                  elements: [{
-                    title: choice.name,
-                    subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
-                    image_url: choice.image_url,
-                    buttons: [{
-                      type: 'web_url',
-                      url: choice.url,
-                      title: 'Visit Yelp Site'
-                    }]
-                  }]
-                }
-              }
-            }
-          });
-  
-      session.send(message);
-      choices[choice.name] = choice;
-      choices['Shuffle again!'] = {};
+      const nearest = nearestBusiness(results.businesses);
+      const choice = randomBusiness(results.businesses);
+      sendYelp(session, choice, 'Random Pick');
+      sendYelp(session, nearest, 'Best');
+      choices[`${choice.name}`] = choice;
+      choices[`${nearest.name}`] = nearest;
+      choices['Try again!'] = {};
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          'Make a selection',
+          'Please select one of the options:',
           choices,
           {
             maxRetries: 0
           }
       );
     })
+    .catch( err => {
+      console.log('ERROR with yelp', err);
+      return session.endDialog('Error searching, try again.');
+    });
   },
   (session, options) => {
     console.log('Selection was', options);
-    if (options.response && options.response.index === 0) {
-      const coords = Object.assign( { name: options.response.entity }, session.dialogData.choices[options.response.entity].coordinates);
+    if (options.response && options.response.index >= 0 && options.response.index < 2) {
+      const choice = session.dialogData.choices[options.response.entity];
+      const coords = Object.assign( { name: choice.name }, choice.coordinates);
       const fromLocation = session.dialogData.fromLocation;
       fromLocation.toLocation = coords;
       return session.beginDialog('/location', fromLocation );     
     } 
-    if (options.response && options.response.index === 1) {
+    if (options.response && options.response.index === 2) {
       return session.replaceDialog('/food', session.dialogData.fromLocation);     
     } 
-    return session.endDialog('Ok, where else would you like to look?');     
+    if (session.message.text === 'help' || session.message.text === 'quit') {
+      return session.replaceDialog('/help');
+    }
+    session.send('Ok, what else would you like to look from?');     
+    return session.replaceDialog('/options', session.dialogData.fromLocation);     
   }
 ])
 
@@ -464,7 +376,7 @@ bot.dialog('/location', [
   function (session, fromLocation) {
     session.dialogData.fromLocation = fromLocation;
     console.log('fromLocation', fromLocation);
-    session.send(`Planning a route from ${fromLocation.name}`);
+    //session.send(`Planning a route from ${fromLocation.name}`);
     session.sendTyping();
     if (fromLocation && fromLocation.toLocation) {
         return session.beginDialog('/destination', fromLocation);
@@ -489,57 +401,64 @@ bot.dialog('/location', [
       session.sendTyping();
       requests.routes(
         fromLocation, toLocation,
-        session.userData.user.id_token,
-        function (error, response, body) {
-          session.dialogData.taxiPlan = filterTaxi(body.plan.itineraries);
-          session.dialogData.ptPlan = filterPT(body.plan.itineraries);
-          if (!session.dialogData.ptPlan) {
+        session.userData.user.id_token).then( response => {
+          session.dialogData.taxiPlan = utils.filterTaxi(response.plan.itineraries);
+          session.dialogData.ptPlan = utils.filterPT(response.plan.itineraries);
+          if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
             return session.endDialog(`Did not find routes to ${toLocation.name}`);
-          } 
-          session.send('Found ' + body.plan.itineraries.length + ' routes');
+          }
+          session.send('Found ' + response.plan.itineraries.length + ' routes');
           const topItin = session.dialogData.ptPlan;
           console.log('Itinerary', topItin);
-          builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport option - ${topItin.fare.points} points?`);
+          const choices = {};
+          if (topItin) {
+            choices['Public Transport'] = {};
+            session.send(`Public Transport ${topItin.fare.points}p, ${utils.calcDuration(topItin)}`);
+          }
+          if (session.dialogData.taxiPlan) {
+            choices['TAXI'] = {};
+            session.send(`Or TAXI ${session.dialogData.taxiPlan.fare.points}p, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
+          }
+          choices.Cancel = {};
+          builder.Prompts.choice(
+            session,
+            `Book a ride to ${toLocation.name}?`,
+            choices,
+            {
+              maxRetries: 0
+            }
+          );
         }
       );
     }
   },
   function (session, results) {
     if (results.response) {
-      // TODO: Continue based on the response
-      // FIXME Continue how?
       console.log('Response to the session is', results);
-      return requests.book(session.dialogData.ptPlan, session.userData.user.id_token, (err, res) => {
-        if (err) {
-          console.log('ERROR booking trip', err);
-          return session.endDialog('Error booking your trip');
-        }
-        return session.endDialog('Your ride is booked - check your Whim-app!');
-      })
-      
+      let plan = null;
+      switch (results.response.entity) {
+        case 'Public Transport':
+          plan = session.dialogData.ptPlan;
+          break;
+        case 'TAXI':
+          plan = session.dialogData.taxiPlan;
+          break;
+        case 2:
+        default:
+          return session.endDialog('Ok - please send a new place');
+      }
+      if(plan) {
+        return requests.book(plan, session.userData.user.id_token).then( res => {
+          return session.endDialog('Your ride is booked - check your Whim-app!');
+        })
+        .catch( err => {
+            console.log('ERROR booking trip', err);
+            return session.endDialog('Error booking your trip');
+        });
+      }
     } 
-    if (session.dialogData.taxiPlan) {
-      const topItin = session.dialogData.taxiPlan;
-      return builder.Prompts.confirm(session, `Do you want to order a TAXI instead - ${topItin.fare.points} points?`);
-    }
     return session.endDialog('Ok. Please throw an another challenge!');
   },
-  function (session, results) {
-    console.log('')
-    if (results.response) {
-      // TODO: Continue based on the response
-      // FIXME Continue how?
-      console.log('Response to the Taxi question is', results);
-      return requests.book(session.dialogData.taxiPlan, session.userData.user.id_token, (err, res) => {
-        if (err) {
-          console.log('ERROR booking trip', err);
-          return session.endDialog('Error booking your trip');
-        }
-        return session.endDialog('Your ride is booked - check your Whim-app!');
-      })
-    } 
-    session.endDialog('Ok, please select another starting point!');
-  }
 ]);
 
 
@@ -576,10 +495,10 @@ bot.dialog('/destination', [
     } else if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
-      return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token, (err, results) => {
-        console.log('Results from search are', results.body);
-        const location = filterGeoCollection(results.body);
-        if (err || !location) {
+      return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
+        console.log('Results from search are', results);
+        const location = utils.filterGeoCollection(results);
+        if (!location) {
           console.log('ERROR', err);
           session.send('Did not understand the sent location - please try again');
           session.replaceDialog('/destination', session.dialogData.choices);
@@ -623,7 +542,7 @@ bot.dialog('/destination', [
   },
   (session, options) => {
     if (!options.response) {
-      return session.endDialog('Please make a selection OK or retry');
+      return session.replaceDialog('/destination', session.dialogData.choices);
     }
     if (options.response.index !== 0) {
       return session.endDialog('Ok, please specify a location again.')
@@ -635,20 +554,40 @@ bot.dialog('/destination', [
 ]);
 
 bot.dialog('/logout', function (session) {
-  requests.unlink(session.message.address.user.id, function (error, response, body) {
-    if (!error && response.statusCode === 200) {
-      // No need to do anything send anything to the user
-      // in the success case since we respond only after
-      // we have received the account unlinking webhook
-      // event from Facebook.
+  requests.unlink(session.message.address.user.id).then(response => {
       session.endDialog();
-    } else {
+    })
+    .catch( () => {
       session.endDialog('Error while unlinking account');
-    }
-  });
+    });
 });
 
 // Mapping between the action `logout` (defined in `persistent-menu.json`)
 // and the /logout dialog defined above.
 bot.beginDialogAction('logout', '/logout');
 
+/**
+ * Login flow with FB account linking
+ * 
+ */
+
+
+
+/**
+ * Handler functions exported from the module
+ */
+
+// 1st and 2nd factor auth
+module.exports.factors = (event, context, callback) => {
+  console.log('factors', event);
+  require('./factors.js')(bot, event, context)
+    .then( res => callback(null, res) )
+    .catch( err => callback(null, err) );
+}
+
+// restify mock for lambda
+module.exports.listener = (event, context, callback) => {
+  console.log('Mock Listener handler called with event', event);
+  const mock = require('./serverless.js')(listener);
+  return mock.post(event, context, callback);
+}

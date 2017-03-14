@@ -24,11 +24,13 @@ provider:
     WHIM_API_KEY: ${file(./dev-env.yml):WHIM_API_KEY}
     WHIM_API_URL: ${file(./dev-env.yml):WHIM_API_URL}
     BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
+    BOT_LOGO_URL: ${file(./dev-env.yml):BOT_LOGO_URL}
     MICROSOFT_APP_ID: ${file(./dev-env.yml):MICROSOFT_APP_ID}
     MICROSOFT_APP_PASSWORD: ${file(./dev-env.yml):MICROSOFT_APP_PASSWORD}
     YELP_APP_ID: ${file(./dev-env.yml):YELP_APP_ID}
     YELP_APP_SECRET: ${file(./dev-env.yml):YELP_APP_SECRET}
     YELP_ACCESS_TOKEN: ${file(./dev-env.yml):YELP_ACCESS_TOKEN}
+    FB_PAGE_TOKEN: ${file(./dev-env.yml):FB_PAGE_TOKEN}
 
 # you can overwrite defaults here
 stage: dev
@@ -55,9 +57,9 @@ region: eu-west-1
 #    variable1: value1
 
 # you can add packaging information here
-package:
-  include:
-    - persistent-menu.json
+#package:
+#  include:
+#    - persistent-menu.json
 #    - index.js
 #    - requests.js
 #    - responses.js
@@ -74,6 +76,9 @@ functions:
   static:
     handler: responses.index
     events:
+      - http: 
+          path: style.css
+          method: get
       - http: 
           path: index.html
           method: get

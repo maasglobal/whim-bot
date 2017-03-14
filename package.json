@@ -1,15 +1,14 @@
 {
   "name": "whim-bot",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "main": "index.js",
   "dependencies": {
-    "bluebird": "^3.5.0",
     "botbuilder": "^3.4.4",
-    "request": "^2.78.0",
-    "restify": "^4.2.0",
+    "request-promise-lite": "^0.8.1",
     "serverless": "^1.8.0"
   },
   "devDependencies": {
     "serverless-offline": "^3.10.2"
-  }
+  },
+  "license": "MIT"
 }
