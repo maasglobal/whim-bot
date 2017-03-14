@@ -1,6 +1,13 @@
 'use strict';
-
-module.exports.filterTaxi = (itineraries) => {
+/**
+ * Basic utilities that don't require any dependencies
+ * @author Sami Pippuri <sami.pippuri@maas.global>
+ */
+/**
+ * filter Taxi routes
+ * @param {Array} itineraries 
+ */
+const filterTaxi = (itineraries) => {
   let ret = undefined;
   for (const item of itineraries) {
     //console.log('Looking for TAXI itinerary', item);
@@ -12,7 +19,7 @@ module.exports.filterTaxi = (itineraries) => {
   return ret;  
 }
 
-module.exports.filterPT = (itineraries) => {
+const filterPT = (itineraries) => {
   let ret = undefined;
   console.log('TODO: filterPT for the best match/score!!');
   for (const item of itineraries) {
@@ -24,7 +31,7 @@ module.exports.filterPT = (itineraries) => {
 }
 
 
-module.exports.filterGeoCollection = coll => {
+const filterGeoCollection = coll => {
   if (!coll || !coll.features || coll.features.length < 1) {
     console.log('This wasnt a feature collection');
     return null;
@@ -65,7 +72,7 @@ const msToTime = duration => {
     }
 }
 
-module.exports.parseLeaveTime = startTime => {
+const parseLeaveTime = startTime => {
     var seconds = parseInt((startTime/1000)%60)
         , minutes = parseInt((startTime/(1000*60))%60)
         , hours = parseInt((startTime/(1000*60*60))%24);
@@ -79,13 +86,13 @@ module.exports.parseLeaveTime = startTime => {
     }
 }
 
-module.exports.calcDuration = itinerary => {
+const calcDuration = itinerary => {
   if (!itinerary || !itinerary.startTime) return -1;
   const diff = itinerary.endTime - itinerary.startTime;
   return msToTime(diff); 
 }
 
-module.exports.concatenateQueryString = params => {
+const concatenateQueryString = params => {
   const ret = [];
   Object.keys(params).map( key => {
     const val = params[key];
@@ -94,3 +101,12 @@ module.exports.concatenateQueryString = params => {
 
   return ret.join('&');
 }
+
+module.exports = {
+  concatenateQueryString,
+  calcDuration,
+  parseLeaveTime,
+  filterGeoCollection,
+  filterPT,
+  filterTaxi,
+};

@@ -1,11 +1,15 @@
 'use strict';
 /**
  * Whim-Bot main handler
+ * @author Sami Pippuri <sami.pippuri@maas.global>
+ * @author Ville Rantala <ville.rantala@microsoft.com>
+ * LICENSE: MIT
  */
 
 const builder = require('botbuilder');
 const requests = require('./requests.js');
 const utils = require('./utils');
+const _ = require('lodash');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
@@ -67,6 +71,7 @@ bot.dialog('/help', session => {
 });
 
 const handleAccountLinking = session => {
+  console.log('handleAccountLinking', session);
   const accountLinking = session.message.sourceEvent.account_linking;
   // This is the handling for the `Account Linking webhook event` where we could
   // verify the authorization_code and that the linking was successful.
@@ -134,7 +139,7 @@ bot.dialog('/welcome', function (session) {
             elements: [{
               title: 'Welcome to Whim Bot',
               subtitle: 'Please log in with your Whim account',
-              image_url: 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
+              image_url: process.env.LOGO_URL || 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
               buttons: [{
                 type: 'account_link',
                 url: FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address)
@@ -259,6 +264,56 @@ bot.dialog('/whimcar', [
 const kFormatter = num => {
     return num > 999 ? (num/1000).toFixed(1) + 'k' : Math.floor(num) + 'm'
 }
+const nearestBusiness = items => {
+  if (!items || items.length === 0) return null;
+  const furthest = _.maxBy(items, item => item.distance );
+  const distanceScore = furthest.distance % 100;
+  items.map( item => {
+    const rating = item.rating ? item.rating : 2.5;
+    item.score = ((rating * 100) - (item.distance / distanceScore));
+  });
+  const max = _.maxBy(items, item => item.score);
+  return max;
+}
+
+const randomBusiness = items => {
+  if (!items || items.length === 0) return null;
+  const rand = Math.floor(Math.random() * 100) % items.length;
+  const choice = items[rand];
+  return choice;
+}
+
+const sendYelp = (session, choice, kind) => {
+  if (!choice.rating) {
+    choice.rating = '-';
+  }
+  if (!choice.price) {
+    choice.price = '-';
+  }
+  const message = new builder.Message(session)
+        .sourceEvent({
+          facebook: {
+            attachment: {
+              type: 'template',
+              payload: {
+                template_type: 'generic',
+                elements: [{
+                  title: `${kind}: ${choice.name}`,
+                  subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
+                  image_url: choice.image_url,
+                  buttons: [{
+                    type: 'web_url',
+                    url: choice.url,
+                    title: 'Visit Yelp Site'
+                  }]
+                }]
+              }
+            }
+          }
+        });
+
+    session.send(message);
+}
 
 bot.dialog('/food', [
   (session, location) => {
@@ -268,50 +323,22 @@ bot.dialog('/food', [
       return session.endDialog('Need to specify a location');
     }
     session.dialogData.fromLocation = location;
-    session.sendTyping();
     requests.places(kind, location.latitude, location.longitude).then( (results) => {
       if (!results.businesses || results.businesses.length < 1 ) {
         return session.endDialog(`Did not find those in ${location.name}. Please try another place.`);
       }
       const choices = {};
-      const rand = Math.floor(Math.random() * 100) % results.businesses.length;
-      const choice = results.businesses[rand];
-      console.log('Selected option', choice);
-      if (!choice.rating) {
-        choice.rating = '-';
-      }
-      if (!choice.price) {
-        choice.price = '-';
-      }
-      const message = new builder.Message(session)
-          .sourceEvent({
-            facebook: {
-              attachment: {
-                type: 'template',
-                payload: {
-                  template_type: 'generic',
-                  elements: [{
-                    title: choice.name,
-                    subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
-                    image_url: choice.image_url,
-                    buttons: [{
-                      type: 'web_url',
-                      url: choice.url,
-                      title: 'Visit Yelp Site'
-                    }]
-                  }]
-                }
-              }
-            }
-          });
-  
-      session.send(message);
-      choices[`Select ${choice.name}`] = choice;
-      choices['Shuffle again!'] = {};
+      const nearest = nearestBusiness(results.businesses);
+      const choice = randomBusiness(results.businesses);
+      sendYelp(session, choice, 'Random Pick');
+      sendYelp(session, nearest, 'Best');
+      choices[`${choice.name}`] = choice;
+      choices[`${nearest.name}`] = nearest;
+      choices['Try again!'] = {};
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          'Please select one option',
+          'Please select one of the options:',
           choices,
           {
             maxRetries: 0
@@ -324,14 +351,14 @@ bot.dialog('/food', [
   },
   (session, options) => {
     console.log('Selection was', options);
-    if (options.response && options.response.index === 0) {
+    if (options.response && options.response.index >= 0 && options.response.index < 2) {
       const choice = session.dialogData.choices[options.response.entity];
       const coords = Object.assign( { name: choice.name }, choice.coordinates);
       const fromLocation = session.dialogData.fromLocation;
       fromLocation.toLocation = coords;
       return session.beginDialog('/location', fromLocation );     
     } 
-    if (options.response && options.response.index === 1) {
+    if (options.response && options.response.index === 2) {
       return session.replaceDialog('/food', session.dialogData.fromLocation);     
     } 
     if (session.message.text === 'help' || session.message.text === 'quit') {
@@ -398,15 +425,12 @@ bot.dialog('/location', [
               maxRetries: 0
             }
           );
-          //builder.Prompts.confirm(session, `Do you want to select the fastest Public Transport option - ${topItin.fare.points} points?`);
         }
       );
     }
   },
   function (session, results) {
     if (results.response) {
-      // TODO: Continue based on the response
-      // FIXME Continue how?
       console.log('Response to the session is', results);
       let plan = null;
       switch (results.response.entity) {
@@ -631,10 +655,5 @@ module.exports.factors = (event, context, callback) => {
 module.exports.listener = (event, context, callback) => {
   console.log('Mock Listener handler called with event', event);
   const mock = require('./serverless.js')(listener);
-  try {
-    return mock.post(event, context, callback);
-  } catch (err) {
-    console.log('ERROR', err.message);
-    callback(null, { statusCode: 500, body: err.message + '\n' + err.stack })
-  }
+  return mock.post(event, context, callback);
 }

@@ -1,4 +1,7 @@
 'use strict';
+/**
+ * Static content handler file - could be prettier!
+ */
 
 const BOT_FRONTEND_URL = process.env.BOT_FRONTEND_URL;
 const LOGO_URL = process.env.BOT_LOGO_URL;

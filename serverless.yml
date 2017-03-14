@@ -57,9 +57,9 @@ region: eu-west-1
 #    variable1: value1
 
 # you can add packaging information here
-package:
-  include:
-    - persistent-menu.json
+#package:
+#  include:
+#    - persistent-menu.json
 #    - index.js
 #    - requests.js
 #    - responses.js
