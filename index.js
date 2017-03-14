@@ -277,9 +277,11 @@ const nearestBusiness = items => {
 }
 
 const randomBusiness = items => {
-  if (!items || items.length === 0) return null;
-  const rand = Math.floor(Math.random() * 100) % items.length;
-  const choice = items[rand];
+  // first, order them based on scores calculated above
+  const sorted = _.sortBy(items, item => item.score);
+  const rand = Math.floor(Math.random() * 1000) % (items.length);
+  const choice = items[Math.floor(rand / 2)]; // top half of the sorted array
+  console.log('Random business selected is', choice);
   return choice;
 }
 
@@ -346,6 +348,7 @@ bot.dialog('/food', [
       );
     })
     .catch( err => {
+      console.log('ERROR with yelp', err);
       return session.endDialog('Error searching, try again.');
     });
   },
@@ -568,76 +571,7 @@ bot.beginDialogAction('logout', '/logout');
  * 
  */
 
-const runFactors = (event, context, callback) => {
-  if (!event.queryStringParameters) {
-    return Promise.resolve( { statusCode: 403, body: 'Expected something else'} );
-  }
-  const redirect = event.queryStringParameters['redirect_uri'];
-  const address = event.queryStringParameters['address'];
-  const token = event.queryStringParameters['account_linking_token'];
-  var phone = event.queryStringParameters['phone'];
-  const path = event.path;
 
-  if (path === '/factor2') {
-    phone = `+${unescape(phone)}`;
-    let code = event.queryStringParameters['code'];
-    console.log('Logging in with', phone, code)
-    return requests.login(phone, code)
-      .then( (response) => {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-        headers: {
-          'Content-Type': 'text/html',
-          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
-        }
-      };
-      var address = JSON.parse(event.queryStringParameters.address);
-      return new Promise( (resolve, reject) => {
-        bot.beginDialog(address, '/persistUserData', response, (error, resp) => {
-          if (error) {
-            console.log('ERROR: Redirecting to', retVal.headers.Location);
-            return reject(retVal);
-          }
-          console.log('SUCCESS: Redirecting to', retVal.headers.Location);
-          retVal.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
-          return resolve(retVal);
-        });
-      });
-    });
-  } else if (path === '/factor1') {
-   
-    phone = unescape(phone);
-    console.log('requesting code for', phone)
-
-    return requests.requestCode(phone)
-      .then( (response, body) => {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-      };
-      
-      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
-      retVal.headers = {
-        Location: `${SECOND_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
-      }
-      console.log('Redirecting to', retVal.headers);
-      retVal.body = '';
-      return retVal;
-    })
-    .catch( err => {
-      return {
-        statusCode: 301, 
-        headers: {
-          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
-        }  
-      }
-    });
-
-  } else {
-    return Promise.reject({ statusCode: 404 });
-  }
-};
 
 /**
  * Handler functions exported from the module
@@ -646,7 +580,7 @@ const runFactors = (event, context, callback) => {
 // 1st and 2nd factor auth
 module.exports.factors = (event, context, callback) => {
   console.log('factors', event);
-  runFactors(event, context)
+  require('./factors.js')(bot, event, context)
     .then( res => callback(null, res) )
     .catch( err => callback(null, err) );
 }

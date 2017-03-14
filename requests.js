@@ -133,7 +133,7 @@ module.exports.places = (str, lat, lon) => {
       latitude: lat,
       longitude: lon,
       term: str,
-      limit: 25,
+      limit: 20,
       open_now: true,
       price: '1,2,3'
     },
