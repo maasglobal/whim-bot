@@ -87,6 +87,7 @@ module.exports.reverse = (lat, lon, token, callback) => {
 };
 
 module.exports.geocode = (text, lat, lon, token, callback) => {
+  console.log('Geocoding...', text);
   return request.get(`${WHIM_API_URL}/geocoding`, {
     qs: {
       name: text,

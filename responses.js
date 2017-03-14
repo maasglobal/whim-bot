@@ -148,13 +148,13 @@ module.exports.index = (event, context, callback) => {
   console.log('Static Content Event is', event);
   switch (event.path) {
     case '/factor2.html':
-      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/html' }, body: module.exports.factor2() });
+      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/html', 'Cache-Control': 'max-age=3600, public' }, body: module.exports.factor2() });
     case '/style.css':
-      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/css' }, body: module.exports.css() });
+      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/css', 'Cache-Control': 'max-age=3600, public' }, body: module.exports.css() });
     case '/scripts.js':
-      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'application/javascript' }, body: module.exports.scripts() });
+      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'application/javascript', 'Cache-Control': 'max-age=3600, public' }, body: module.exports.scripts() });
     case '/index.html':
     default:
-      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/html' }, body: factor1() });
+      return callback(null, { statusCode: 200, headers: { 'Content-Type': 'text/html', 'Cache-Control': 'max-age=3600, public' }, body: factor1() });
   }
 }

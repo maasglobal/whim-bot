@@ -1,8 +1,4 @@
 {
-  "parser": "babel-eslint",
-  "parserOptions": {
-    "sourceType": "script"
-  },
   "env": {
     "node": true,
     "mocha": true

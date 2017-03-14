@@ -16,7 +16,7 @@ module.exports = function (listener) {
       };
 
       var req = {
-        body: JSON.parse(event.body),
+        body: event.body, //JSON.parse(event.body),
         headers: event.headers
       };
 

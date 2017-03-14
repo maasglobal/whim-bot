@@ -5,7 +5,7 @@
 
 const builder = require('botbuilder');
 const requests = require('./requests.js');
-//const Promise = require('bluebird');
+const utils = require('./utils');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
@@ -32,51 +32,7 @@ intents.matches('hi', '/help');
 intents.matches('hi!', '/help');
 intents.matches('hello', '/help');
 
-const msToTime = duration => {
-    var seconds = parseInt((duration/1000)%60)
-        , minutes = parseInt((duration/(1000*60))%60)
-        , hours = parseInt((duration/(1000*60*60))%24);
-
-    //hours = (hours < 10) ? "0" + hours : hours;
-    //minutes = (minutes < 10) ? "0" + minutes : minutes;
-    if (hours > 0) {
-      return `${hours}h ${minutes}min`;
-    } else {
-      return `${minutes}min`;
-    }
-}
-
-const parseLeaveTime = startTime => {
-    var seconds = parseInt((startTime/1000)%60)
-        , minutes = parseInt((startTime/(1000*60))%60)
-        , hours = parseInt((startTime/(1000*60*60))%24);
-
-    //hours = (hours < 10) ? "0" + hours : hours;
-    //minutes = (minutes < 10) ? "0" + minutes : minutes;
-    if (hours > 0) {
-      return `${hours}h ${minutes}min`;
-    } else {
-      return `${minutes}min`;
-    }
-}
-
-const calcDuration = itinerary => {
-  if (!itinerary || !itinerary.startTime) return -1;
-  const diff = itinerary.endTime - itinerary.startTime;
-  return msToTime(diff); 
-}
-
-const concatenateQueryString = params => {
-  const ret = [];
-  Object.keys(params).map( key => {
-    const val = params[key];
-    ret.push( `${key}=${encodeURIComponent(val)}` );
-  });
-
-  return ret.join('&');
-}
-
-const fetchProfileFavorites = (token) => {
+const fetchProfileFavorites = token => {
   return new Promise( (resolve, reject) => {
     return requests.favorites(token)
       .then( (res) => {
@@ -94,99 +50,7 @@ const fetchProfileFavorites = (token) => {
   });
 }
 
-const filterTaxi = (itineraries) => {
-  let ret = undefined;
-  for (const item of itineraries) {
-    //console.log('Looking for TAXI itinerary', item);
-    if (item.legs[0].mode === 'TAXI') {
-      console.log('Found a TAXI itinerary', item);
-      ret = item;
-    }
-  }
-  return ret;  
-}
-
-const filterPT = (itineraries) => {
-  let ret = undefined;
-  console.log('TODO: filterPT for the best match/score!!');
-  for (const item of itineraries) {
-    if (!ret && item.fare.points !== null) {
-      ret = item;
-    }
-  }
-  return ret;
-}
-
-const runFactors = (event, context, callback) => {
-  if (!event.queryStringParameters) {
-    return Promise.resolve( { statusCode: 403, body: 'Expected something else'} );
-  }
-  const redirect = event.queryStringParameters['redirect_uri'];
-  const address = event.queryStringParameters['address'];
-  const token = event.queryStringParameters['account_linking_token'];
-  var phone = event.queryStringParameters['phone'];
-  const path = event.path;
-
-  if (path === '/factor2') {
-    phone = `+${unescape(phone)}`;
-    let code = event.queryStringParameters['code'];
-    console.log('Logging in with', phone, code)
-    return requests.login(phone, code)
-      .then( (response) => {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-        headers: {
-          'Content-Type': 'text/html',
-          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-        }
-      };
-      var address = JSON.parse(event.queryStringParameters.address);
-      return new Promise( (resolve, reject) => {
-        bot.beginDialog(address, '/persistUserData', response, (error, resp) => {
-          if (error) {
-            console.log('ERROR: Redirecting to', retVal.headers.Location);
-            return reject(retVal);
-          }
-          console.log('SUCCESS: Redirecting to', retVal.headers.Location);
-          retVal.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
-          return resolve(retVal);
-        });
-      });
-    });
-  } else if (path === '/factor1') {
-   
-    phone = unescape(phone);
-    console.log('requesting code for', phone)
-
-    return requests.requestCode(phone)
-      .then( (response, body) => {
-      const retVal = {
-        statusCode: 301,
-        body: '',
-      };
-      
-      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
-      retVal.headers = {
-        Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-      }
-      console.log('Redirecting to', retVal.headers);
-      retVal.body = '';
-      return retVal;
-    })
-    .catch( err => {
-      return {
-        statusCode: 301, 
-        headers: {
-          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
-        }  
-      }
-    });
-
-  } else {
-    return Promise.reject({ statusCode: 404 });
-  }
-};
+bot.dialog('/', intents);
 
 bot.dialog('/persistUserData', function (session, data) {
   session.userData.user = data;
@@ -202,16 +66,14 @@ bot.dialog('/help', session => {
   session.endDialog('Where is your starting point?')
 });
 
-bot.dialog('/', intents);
-
-var handleAccountLinking = function (session) {
-  var accountLinking = session.message.sourceEvent.account_linking;
+const handleAccountLinking = session => {
+  const accountLinking = session.message.sourceEvent.account_linking;
   // This is the handling for the `Account Linking webhook event` where we could
   // verify the authorization_code and that the linking was successful.
   // The authorization_code is the value we passed above and
   // status has value `linked` in case the linking succeeded.
-  var username = accountLinking.authorization_code;
-  var authorizationStatus = accountLinking.status;
+  const username = accountLinking.authorization_code;
+  const authorizationStatus = accountLinking.status;
   if (authorizationStatus === 'linked') {
     session.beginDialog('/help');
   } else if (authorizationStatus === 'unlinked') {
@@ -223,18 +85,19 @@ var handleAccountLinking = function (session) {
   }
 };
 
-intents.onDefault(function (session) {
+intents.onDefault( session => {
+  console.log('OnDefault', session.message);
   if (session.message.source === 'facebook') {
     if (session.message.sourceEvent.account_linking) {
       handleAccountLinking(session);
       return;
     }
-    var storedUser = session.userData.user;
+    const storedUser = session.userData.user;
     if (!storedUser) {
       session.beginDialog('/welcome');
       return;
     }
-    var entities = session.message.entities;
+    const entities = session.message.entities;
     console.log('Entities received are', entities);
 
     if (entities.length > 0 && entities[0].geo) {
@@ -244,19 +107,10 @@ intents.onDefault(function (session) {
     }
     if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       // TODO recognize natural language
-      switch (session.message.text.toLowerCase()) {
-        case 'quit':
-        case 'cancel':
-        case 'hello':
-        case 'hi':
-        case 'hi!':
-        case 'yo!':
-        case 'yo':
-        case 'help':
-        case 'help!':
-          return session.beginDialog('/help');;
-        default:
-          break;
+      if (['quit','exit','cancel','hello','hi','hi!','yo','yo!','help','help!']
+            .indexOf(session.message.text.toLowerCase()) !== -1) {
+        console.log('Help wanted');
+        return session.beginDialog('/help');
       }
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
@@ -278,7 +132,8 @@ bot.dialog('/welcome', function (session) {
           payload: {
             template_type: 'generic',
             elements: [{
-              title: 'Welcome to Whim',
+              title: 'Welcome to Whim Bot',
+              subtitle: 'Please log in with your Whim account',
               image_url: 'http://whimapp.com/wp-content/uploads/2017/03/whim.jpg',
               buttons: [{
                 type: 'account_link',
@@ -292,37 +147,10 @@ bot.dialog('/welcome', function (session) {
   session.endDialog(message);
 });
 
-const filterGeoCollection = coll => {
-  if (!coll || !coll.features || coll.features.length < 1) {
-    console.log('This wasnt a feature collection');
-    return null;
-  }
-  for (const feature of coll.features) {
-    if (feature.type === 'Feature' && 
-        feature.properties && 
-        feature.properties.name && 
-        feature.geometry) {
-          console.log('Found a match', JSON.stringify(feature));
-      let name = `${feature.properties.name}`;
-      if (feature.properties.zipCode && feature.properties.city) {
-        name += `(${feature.properties.zipCode} ${feature.properties.city})`;
-      }
-      return {
-        latitude: feature.geometry.coordinates[0],
-        longitude: feature.geometry.coordinates[1],
-        name: name
-      }
-    } else {
-       console.log('failed', feature.type, feature.properties, feature.properties.name, feature.geometry);
-    }
-  }
-  return null;
-}
-
 bot.dialog('/geosearch', [
   (session, text) => {
     requests.geocode(text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
-        const location = filterGeoCollection(results);
+        const location = utils.filterGeoCollection(results);
         console.log('Results from search are', results, 'filtered as', location);
         if (!location) return Promise.reject('Could not find location');
         const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
@@ -544,8 +372,8 @@ bot.dialog('/location', [
       requests.routes(
         fromLocation, toLocation,
         session.userData.user.id_token).then( response => {
-          session.dialogData.taxiPlan = filterTaxi(response.plan.itineraries);
-          session.dialogData.ptPlan = filterPT(response.plan.itineraries);
+          session.dialogData.taxiPlan = utils.filterTaxi(response.plan.itineraries);
+          session.dialogData.ptPlan = utils.filterPT(response.plan.itineraries);
           if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
             return session.endDialog(`Did not find routes to ${toLocation.name}`);
           }
@@ -555,11 +383,11 @@ bot.dialog('/location', [
           const choices = {};
           if (topItin) {
             choices['Public Transport'] = {};
-            session.send(`Public Transport ${topItin.fare.points}p, ${calcDuration(topItin)}`);
+            session.send(`Public Transport ${topItin.fare.points}p, ${utils.calcDuration(topItin)}`);
           }
           if (session.dialogData.taxiPlan) {
             choices['TAXI'] = {};
-            session.send(`Or TAXI ${session.dialogData.taxiPlan.fare.points}p, ${calcDuration(session.dialogData.taxiPlan)}`);
+            session.send(`Or TAXI ${session.dialogData.taxiPlan.fare.points}p, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
           }
           choices.Cancel = {};
           builder.Prompts.choice(
@@ -642,7 +470,7 @@ bot.dialog('/destination', [
       session.sendTyping();
       return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
         console.log('Results from search are', results);
-        const location = filterGeoCollection(results);
+        const location = utils.filterGeoCollection(results);
         if (!location) {
           console.log('ERROR', err);
           session.send('Did not understand the sent location - please try again');
@@ -687,7 +515,7 @@ bot.dialog('/destination', [
   },
   (session, options) => {
     if (!options.response) {
-      return session.endDialog('Please make a selection OK or retry');
+      return session.replaceDialog('/destination', session.dialogData.choices);
     }
     if (options.response.index !== 0) {
       return session.endDialog('Ok, please specify a location again.')
@@ -712,6 +540,82 @@ bot.dialog('/logout', function (session) {
 bot.beginDialogAction('logout', '/logout');
 
 /**
+ * Login flow with FB account linking
+ * 
+ */
+
+const runFactors = (event, context, callback) => {
+  if (!event.queryStringParameters) {
+    return Promise.resolve( { statusCode: 403, body: 'Expected something else'} );
+  }
+  const redirect = event.queryStringParameters['redirect_uri'];
+  const address = event.queryStringParameters['address'];
+  const token = event.queryStringParameters['account_linking_token'];
+  var phone = event.queryStringParameters['phone'];
+  const path = event.path;
+
+  if (path === '/factor2') {
+    phone = `+${unescape(phone)}`;
+    let code = event.queryStringParameters['code'];
+    console.log('Logging in with', phone, code)
+    return requests.login(phone, code)
+      .then( (response) => {
+      const retVal = {
+        statusCode: 301,
+        body: '',
+        headers: {
+          'Content-Type': 'text/html',
+          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+        }
+      };
+      var address = JSON.parse(event.queryStringParameters.address);
+      return new Promise( (resolve, reject) => {
+        bot.beginDialog(address, '/persistUserData', response, (error, resp) => {
+          if (error) {
+            console.log('ERROR: Redirecting to', retVal.headers.Location);
+            return reject(retVal);
+          }
+          console.log('SUCCESS: Redirecting to', retVal.headers.Location);
+          retVal.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
+          return resolve(retVal);
+        });
+      });
+    });
+  } else if (path === '/factor1') {
+   
+    phone = unescape(phone);
+    console.log('requesting code for', phone)
+
+    return requests.requestCode(phone)
+      .then( (response, body) => {
+      const retVal = {
+        statusCode: 301,
+        body: '',
+      };
+      
+      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
+      retVal.headers = {
+        Location: `${SECOND_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+      }
+      console.log('Redirecting to', retVal.headers);
+      retVal.body = '';
+      return retVal;
+    })
+    .catch( err => {
+      return {
+        statusCode: 301, 
+        headers: {
+          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+        }  
+      }
+    });
+
+  } else {
+    return Promise.reject({ statusCode: 404 });
+  }
+};
+
+/**
  * Handler functions exported from the module
  */
 
@@ -727,5 +631,10 @@ module.exports.factors = (event, context, callback) => {
 module.exports.listener = (event, context, callback) => {
   console.log('Mock Listener handler called with event', event);
   const mock = require('./serverless.js')(listener);
-  return mock.post(event, context, callback);
+  try {
+    return mock.post(event, context, callback);
+  } catch (err) {
+    console.log('ERROR', err.message);
+    callback(null, { statusCode: 500, body: err.message + '\n' + err.stack })
+  }
 }
