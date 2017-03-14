@@ -1,4 +1,5 @@
 'use strict';
+const requests = require('./requests');
 
 const runFactors = (bot, event, context) => {
   if (!event.queryStringParameters) {
