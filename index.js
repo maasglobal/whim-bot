@@ -9,9 +9,11 @@
 const builder = require('botbuilder');
 const requests = require('./requests.js');
 const utils = require('./utils');
-const _ = require('lodash');
 
 const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
+const LOGO_URL = process.env.BOT_LOGO_URL;
+const WHIM_BOOKED_PIC = process.env.WHIM_BOOKED_PIC;
+const WHIM_BOOKED_URL = process.env.WHIM_BOOKED_URL;
 const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
 const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
 const MIN_LOCATION_CHARS = 3;
@@ -158,7 +160,7 @@ bot.dialog('/geosearch', [
         const location = utils.filterGeoCollection(results);
         console.log('Results from search are', results, 'filtered as', location);
         if (!location) return Promise.reject('Could not find location');
-        const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=300x300&zoom=12&markers=${location.latitude},${location.longitude}`
+        const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=480x480&zoom=12&markers=${location.latitude},${location.longitude}`
         console.log('Requesting a static map from', googleURL);
         const message = new builder.Message(session)
             .sourceEvent({
@@ -237,7 +239,9 @@ bot.dialog('/options', [(session, fromLocation) => {
         return session.beginDialog('/location', param); 
       case 1:
         console.log('Whim Car selected');
-        return session.beginDialog('/whimcar', session.dialogData.fromLocation); 
+        session.send('Sorry, still working on Whim Car');
+        return session.replaceDialog('/options', param); 
+        //return session.beginDialog('/whimcar', session.dialogData.fromLocation); 
       case 2:
         console.log('Moving to /food to search for', param);
         return session.beginDialog('/food', param); 
@@ -261,30 +265,6 @@ bot.dialog('/whimcar', [
   }
 ]);
 
-const kFormatter = num => {
-    return num > 999 ? (num/1000).toFixed(1) + 'k' : Math.floor(num) + 'm'
-}
-const nearestBusiness = items => {
-  if (!items || items.length === 0) return null;
-  const furthest = _.maxBy(items, item => item.distance );
-  const distanceScore = furthest.distance % 100;
-  items.map( item => {
-    const rating = item.rating ? item.rating : 2.5;
-    item.score = ((rating * 100) - (item.distance / distanceScore));
-  });
-  const max = _.maxBy(items, item => item.score);
-  return max;
-}
-
-const randomBusiness = items => {
-  // first, order them based on scores calculated above
-  const sorted = _.sortBy(items, item => item.score);
-  const rand = Math.floor(Math.random() * 1000) % (items.length);
-  const choice = items[Math.floor(rand / 2)]; // top half of the sorted array
-  console.log('Random business selected is', choice);
-  return choice;
-}
-
 const sendYelp = (session, choice, kind) => {
   if (!choice.rating) {
     choice.rating = '-';
@@ -301,7 +281,7 @@ const sendYelp = (session, choice, kind) => {
                 template_type: 'generic',
                 elements: [{
                   title: `${kind}: ${choice.name}`,
-                  subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${kFormatter(choice.distance)} away`,
+                  subtitle: `${choice.price} - ${choice.rating} Yelp rating - ${utils.kFormatter(choice.distance)} away`,
                   image_url: choice.image_url,
                   buttons: [{
                     type: 'web_url',
@@ -317,6 +297,32 @@ const sendYelp = (session, choice, kind) => {
     session.send(message);
 }
 
+const sendBooked = (session, plan, res) => {
+  console.log('Seding confirmation for the trip', plan, 'result', res);
+  const message = new builder.Message(session)
+        .sourceEvent({
+          facebook: {
+            attachment: {
+              type: 'template',
+              payload: {
+                template_type: 'generic',
+                elements: [{
+                  title: `Your ride is booked! Open Whim to check its status.`,
+                  image_url: `${WHIM_BOOKED_PIC}`,
+                  buttons: [{
+                    type: 'web_url',
+                    url: `${WHIM_BOOKED_URL}`,
+                    title: 'Open in Whim'
+                  }]
+                }]
+              }
+            }
+          }
+        });
+
+    session.send(message);  
+}
+
 bot.dialog('/food', [
   (session, location) => {
     const kind = location.kind;
@@ -325,22 +331,25 @@ bot.dialog('/food', [
       return session.endDialog('Need to specify a location');
     }
     session.dialogData.fromLocation = location;
+    session.sendTyping();
     requests.places(kind, location.latitude, location.longitude).then( (results) => {
       if (!results.businesses || results.businesses.length < 1 ) {
         return session.endDialog(`Did not find those in ${location.name}. Please try another place.`);
       }
       const choices = {};
-      const nearest = nearestBusiness(results.businesses);
-      const choice = randomBusiness(results.businesses);
-      sendYelp(session, choice, 'Random Pick');
-      sendYelp(session, nearest, 'Best');
+      const nearest = utils.nearestBusiness(results.businesses);
+      const choice = utils.randomBusiness(results.businesses, nearest);
+      if (choice.id !== nearest.id) {
+        sendYelp(session, choice, 'Random Pick');
+      }
+      sendYelp(session, nearest, 'Best Nearby');
       choices[`${choice.name}`] = choice;
       choices[`${nearest.name}`] = nearest;
       choices['Try again!'] = {};
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          'Please select one of the options:',
+          'Please select one of the options or type to search for something else nearby:',
           choices,
           {
             maxRetries: 0
@@ -353,22 +362,25 @@ bot.dialog('/food', [
     });
   },
   (session, options) => {
-    console.log('Selection was', options);
-    if (options.response && options.response.index >= 0 && options.response.index < 2) {
+    console.log('Selection was', options, 'dialogData', session.dialogData.choices);
+    if (options.response && (options.response.index >= 0) && 
+        (options.response.index < (Object.keys(session.dialogData.choices).length - 1))) {
       const choice = session.dialogData.choices[options.response.entity];
       const coords = Object.assign( { name: choice.name }, choice.coordinates);
       const fromLocation = session.dialogData.fromLocation;
       fromLocation.toLocation = coords;
       return session.beginDialog('/location', fromLocation );     
     } 
-    if (options.response && options.response.index === 2) {
+    if (options.response && (options.response.index === (Object.keys(session.dialogData.choices).length - 1))) {
       return session.replaceDialog('/food', session.dialogData.fromLocation);     
     } 
-    if (session.message.text === 'help' || session.message.text === 'quit') {
+    if (session.message.text === 'q' ||session.message.text === 'help' || session.message.text === 'quit') {
       return session.replaceDialog('/help');
     }
-    session.send('Ok, what else would you like to look from?');     
-    return session.replaceDialog('/options', session.dialogData.fromLocation);     
+    //session.send('Ok, what else would you like to look from?');
+    const loc = session.dialogData.fromLocation;
+    loc.kind = session.message.text;
+    return session.replaceDialog('/food', loc);     
   }
 ])
 
@@ -449,10 +461,12 @@ bot.dialog('/location', [
       }
       if(plan) {
         return requests.book(plan, session.userData.user.id_token).then( res => {
-          return session.endDialog('Your ride is booked - check your Whim-app!');
+          sendBooked(session, plan, res);
+          session.endConversation();
+          //return session.endDialog('Your ride is booked - check your <a href="whimapp://open">Whim-app!</a>');
         })
         .catch( err => {
-            console.log('ERROR booking trip', err);
+            console.log('ERROR booking trip', err, err.stack);
             return session.endDialog('Error booking your trip');
         });
       }
