@@ -133,9 +133,10 @@ module.exports.places = (str, lat, lon) => {
       latitude: lat,
       longitude: lon,
       term: str,
-      limit: 20,
-      open_now: true,
-      price: '1,2,3'
+      limit: 25,
+      //open_now: true,
+      sort_by: 'distance',
+      //price: '1,2,3'
     },
     headers: {
       'Authorization': 'Bearer ' + YELP_ACCESS_TOKEN

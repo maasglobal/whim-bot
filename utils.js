@@ -1,8 +1,11 @@
 'use strict';
 /**
- * Basic utilities that don't require any dependencies
+ * Utility functions that are pretty much self contained
  * @author Sami Pippuri <sami.pippuri@maas.global>
  */
+
+const _ = require('lodash');
+
 /**
  * filter Taxi routes
  * @param {Array} itineraries 
@@ -102,6 +105,43 @@ const concatenateQueryString = params => {
   return ret.join('&');
 }
 
+const kFormatter = num => {
+    return num > 999 ? (num/1000).toFixed(1) + 'km' : Math.floor(num) + 'm'
+}
+
+const randomInRange = (minimum, maximum) => {
+  return Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
+}
+
+const nearestBusiness = items => {
+  if (!items || items.length === 0) return null;
+  const nearest = _.minBy(items, item => item.distance );
+  let distanceScore = nearest.distance / 500;
+  if (distanceScore < 1.0) {
+    distanceScore = 1;
+  }
+  items.map( item => {
+    let rating = item.rating ? item.rating : 3.0;
+    if (rating > 3.0 && item.review_count < 10) rating = 3.0;
+    item.score = ((rating * 100) - (item.distance / distanceScore));
+  });
+  const max = _.maxBy(items, item => item.score);
+
+  return max;
+}
+
+const randomBusiness = (items, nearest) => {
+  // first, order them based on scores calculated above
+  const sorted = _.reverse(_.sortBy(items, item => item.score));
+  const rand = randomInRange(0, items.length - 1);
+  const choice = items[Math.floor(rand / 4)]; // top quarter of the sorted array
+  //console.log('Random business selected is', choice);
+  if (nearest.id === choice.id && items.count > 2) {
+    return randomBusiness(items, nearest);
+  }
+  return choice;
+}
+
 module.exports = {
   concatenateQueryString,
   calcDuration,
@@ -109,4 +149,8 @@ module.exports = {
   filterGeoCollection,
   filterPT,
   filterTaxi,
+  kFormatter,
+  randomInRange,
+  nearestBusiness,
+  randomBusiness,
 };
