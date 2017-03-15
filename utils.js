@@ -116,14 +116,15 @@ const randomInRange = (minimum, maximum) => {
 const nearestBusiness = items => {
   if (!items || items.length === 0) return null;
   const nearest = _.minBy(items, item => item.distance );
-  let distanceScore = nearest.distance / 500;
+  let distanceScore = nearest.distance / 100;
   if (distanceScore < 1.0) {
     distanceScore = 1;
   }
   items.map( item => {
     let rating = item.rating ? item.rating : 3.0;
     if (rating > 3.0 && item.review_count < 10) rating = 3.0;
-    item.score = ((rating * 100) - (item.distance / distanceScore));
+    item.score = ((rating * 1000) - ((item.distance - nearest.distance) / distanceScore));
+    //console.log(`${item.name} rating ${rating} distance ${item.distance} score ${item.score}`)
   });
   const max = _.maxBy(items, item => item.score);
 

@@ -349,7 +349,7 @@ bot.dialog('/food', [
       session.dialogData.choices = choices;
       builder.Prompts.choice(
           session,
-          'Please select one of the options:',
+          'Please select one of the options or type to search for something else nearby:',
           choices,
           {
             maxRetries: 0
