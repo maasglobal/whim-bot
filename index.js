@@ -595,8 +595,14 @@ bot.beginDialogAction('logout', '/logout');
 module.exports.factors = (event, context, callback) => {
   console.log('factors', event);
   require('./factors.js')(bot, event, context)
-    .then( res => callback(null, res) )
-    .catch( err => callback(null, err) );
+    .then( res => { 
+      console.log('Factor handler', res);
+      callback(null, res);
+     })
+    .catch( err => { 
+      console.log('ERROR', err);
+      callback(null, err);
+    });
 }
 
 // restify mock for lambda
