@@ -95,16 +95,6 @@ const calcDuration = itinerary => {
   return msToTime(diff); 
 }
 
-const concatenateQueryString = params => {
-  const ret = [];
-  Object.keys(params).map( key => {
-    const val = params[key];
-    ret.push( `${key}=${encodeURIComponent(val)}` );
-  });
-
-  return ret.join('&');
-}
-
 const kFormatter = num => {
     return num > 999 ? (num/1000).toFixed(1) + 'km' : Math.floor(num) + 'm'
 }
@@ -144,7 +134,6 @@ const randomBusiness = (items, nearest) => {
 }
 
 module.exports = {
-  concatenateQueryString,
   calcDuration,
   parseLeaveTime,
   filterGeoCollection,

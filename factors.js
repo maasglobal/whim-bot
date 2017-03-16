@@ -1,5 +1,19 @@
 'use strict';
 const requests = require('./requests');
+const utils = require('./utils');
+const FRONTEND_URL = process.env.BOT_FRONTEND_URL || 'https://localhost:3000';
+const FIRST_FACTOR_URL = FRONTEND_URL + '/index.html';
+const SECOND_FACTOR_URL = FRONTEND_URL + '/factor2.html';
+
+const concatenateQueryString = params => {
+  const ret = [];
+  Object.keys(params).map( key => {
+    const val = params[key];
+    ret.push( `${key}=${encodeURIComponent(val)}` );
+  });
+
+  return ret.join('&');
+}
 
 const runFactors = (bot, event, context) => {
   if (!event.queryStringParameters) {
@@ -22,7 +36,7 @@ const runFactors = (bot, event, context) => {
         body: '',
         headers: {
           'Content-Type': 'text/html',
-          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
         }
       };
       var address = JSON.parse(event.queryStringParameters.address);
@@ -33,7 +47,7 @@ const runFactors = (bot, event, context) => {
             return reject(retVal);
           }
           console.log('SUCCESS: Redirecting to', retVal.headers.Location);
-          retVal.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
+          retVal.headers.Location = `${redirect}&authorization_code=${phone.replace('+', '')}`;
           return resolve(retVal);
         });
       });
@@ -44,15 +58,14 @@ const runFactors = (bot, event, context) => {
     console.log('requesting code for', phone)
 
     return requests.requestCode(phone)
-      .then( (response, body) => {
+      .then( response => {
       const retVal = {
         statusCode: 301,
         body: '',
       };
       
-      //res.redirect(SECOND_FACTOR_URL + '?' + queryString + '&phone=' + phone , next);
       retVal.headers = {
-        Location: `${SECOND_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+        Location: `${SECOND_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
       }
       console.log('Redirecting to', retVal.headers);
       retVal.body = '';
@@ -62,7 +75,7 @@ const runFactors = (bot, event, context) => {
       return {
         statusCode: 301, 
         headers: {
-          Location: `${FIRST_FACTOR_URL}?${utils.concatenateQueryString(event.queryStringParameters)}`
+          Location: `${FIRST_FACTOR_URL}?${concatenateQueryString(event.queryStringParameters)}`
         }  
       }
     });

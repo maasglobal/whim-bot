@@ -1,10 +1,31 @@
+# 
+# TODO: Change the values for your environment and rename as dev-env.yml 
+#
+
+# Your API Key for Whim
 WHIM_API_KEY: ershtdjysgthstha
-WHIM_API_URL: https://api.whimapp.global
+
+# API Base URL
+WHIM_API_URL: https://api.whimapp.com
+
+# Used to populate the ride confirmation popup
+WHIM_BOOKED_PIC: http://whimapp.com/wp-content/uploads/2016/08/whimapp-preview.png
+WHIM_BOOKED_URL: http://whimapp.com/open-whim/
+
+# Shown at sign-up
 BOT_LOGO_URL: https://http.cat/200
+
+# Here just to toggle the local/deployed environment easily
 XBOT_FRONTEND_URL: https://<id>.ngrok.io 
+
+# Login frontend and base for bot messages API (/api/messages)
 BOT_FRONTEND_URL: https://<id>.execute-api.eu-west-1.amazonaws.com/dev
+
+# Microsoft Bot Framework ID and secret
 MICROSOFT_APP_ID: <id>
 MICROSOFT_APP_PASSWORD: <pwd>
+
+# Yelp credentials
 YELP_APP_ID: <id>
 YELP_APP_SECRET: <secret>
 YELP_ACCESS_TOKEN: <token>
