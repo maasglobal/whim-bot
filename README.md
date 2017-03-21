@@ -3,7 +3,7 @@
 Built with Serverless >= 1.8, deploys to AWS directly.
 
 * Create a bot at [Bot Framework](https://botframework.com)
-* Create a Facebook [Page and a Facebook app] (https://developer.facebook.com)
+* Create a Facebook [Page and a Facebook app](https://developer.facebook.com)
 * Configure your project by editing `serverless.yml`
 * Configure your environment by creating `dev-env.yml` based on the sample given
 * Set up [Serverless](https://serverless.com)
