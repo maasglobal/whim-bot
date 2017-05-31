@@ -425,11 +425,11 @@ bot.dialog('/location', [
           const choices = {};
           if (topItin) {
             choices['Public Transport'] = {};
-            session.send(`Public Transport ${topItin.fare.points}p, ${utils.calcDuration(topItin)}`);
+            session.send(`Public Transport ${Math.ceil(topItin.fare.amount / 100)} pts, ${utils.calcDuration(topItin)}`);
           }
           if (session.dialogData.taxiPlan) {
             choices['TAXI'] = {};
-            session.send(`Or TAXI ${session.dialogData.taxiPlan.fare.points}p, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
+            session.send(`Or TAXI ${Math.ceil(session.dialogData.taxiPlan.fare.amount / 100)} pts, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
           }
           choices.Cancel = {};
           builder.Prompts.choice(
