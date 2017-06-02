@@ -434,37 +434,57 @@ bot.dialog('/location', [
       }
       session.send(`Searching for routes from ${fromLocation.name} to ${toLocation.name}`);
       session.sendTyping();
-      requests.routes(
-        fromLocation, toLocation,
-        session.userData.user.id_token).then( response => {
-          session.dialogData.taxiPlan = utils.filterTaxi(response.plan.itineraries);
-          session.dialogData.ptPlan = utils.filterPT(response.plan.itineraries);
-          if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
-            return session.endDialog(`Did not find routes to ${toLocation.name}`);
+      Promise.resolve()
+        .then( _ => {
+          if (!fromLocation.addressComponents) {
+            return requests.reverse(fromLocation.latitude, fromLocation.longitude, null, fromLocation.name);
+          } else {
+            return Promise.resolve(fromLocation);
           }
-          session.send('Found ' + response.plan.itineraries.length + ' routes');
-          const topItin = session.dialogData.ptPlan;
-          console.log('Itinerary', topItin);
-          const choices = {};
-          if (topItin) {
-            choices['Public Transport'] = {};
-            session.send(`Public Transport ${Math.ceil(topItin.fare.amount / 100)} pts, ${utils.calcDuration(topItin)}`);
+        })
+        .then( from => {
+          fromLocation = from;
+          if (!toLocation.addressComponents) {
+            return requests.reverse(toLocation.latitude, toLocation.longitude, null, toLocation.name);
+          } else {
+            return Promise.resolve(toLocation);
           }
-          if (session.dialogData.taxiPlan) {
-            choices['TAXI'] = {};
-            session.send(`Or TAXI ${Math.ceil(session.dialogData.taxiPlan.fare.amount / 100)} pts, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
-          }
-          choices.Cancel = {};
-          builder.Prompts.choice(
-            session,
-            `Book a ride to ${toLocation.name}?`,
-            choices,
-            {
-              maxRetries: 0
+        })
+        .then( to => {
+          toLocation = to;
+          requests.routes(
+            fromLocation, toLocation,
+            session.userData.user.id_token)
+            .then( response => {
+              session.dialogData.taxiPlan = utils.filterTaxi(response.plan.itineraries);
+              session.dialogData.ptPlan = utils.filterPT(response.plan.itineraries);
+              if (!session.dialogData.ptPlan && !session.dialogData.taxiPlan) {
+                return session.endDialog(`Did not find routes to ${toLocation.name}`);
+              }
+              session.send('Found ' + response.plan.itineraries.length + ' routes');
+              const topItin = session.dialogData.ptPlan;
+              console.log('Itinerary', topItin);
+              const choices = {};
+              if (topItin) {
+                choices['Public Transport'] = {};
+                session.send(`Public Transport ${Math.ceil(topItin.fare.amount / 100)} pts, ${utils.calcDuration(topItin)}`);
+              }
+              if (session.dialogData.taxiPlan) {
+                choices['TAXI'] = {};
+                session.send(`Or TAXI ${Math.ceil(session.dialogData.taxiPlan.fare.amount / 100)} pts, ${utils.calcDuration(session.dialogData.taxiPlan)}`);
+              }
+              choices.Cancel = {};
+              builder.Prompts.choice(
+                session,
+                `Book a ride to ${toLocation.name}?`,
+                choices,
+                {
+                  maxRetries: 0
+                }
+              );
             }
           );
-        }
-      );
+        });
     }
   },
   function (session, results) {

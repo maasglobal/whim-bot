@@ -53,7 +53,6 @@ module.exports.login = function (phone, code) {
 
 module.exports.routes = function (from, to, token) {
   console.log('names', from.name, to.name);
-  
   console.log(`streetName:${from.addressComponents.streetName}|streetNumber:${from.addressComponents.streetNumber}|city:${from.addressComponents.city}|country:${from.addressComponents.country}`)
   console.log(`streetName:${to.addressComponents.streetName}|streetNumber:${to.addressComponents.streetNumber}|city:${to.addressComponents.city}|country:${to.addressComponents.country}`)
   return request.get(WHIM_API_URL + '/routes', {
