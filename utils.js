@@ -61,6 +61,11 @@ const filterGeoCollection = coll => {
   return null;
 }
 
+const filterGeoCollectionGoogle = coll => {
+  
+  return coll;
+}
+
 const msToTime = duration => {
     var seconds = parseInt((duration/1000)%60)
         , minutes = parseInt((duration/(1000*60))%60)
@@ -137,6 +142,7 @@ module.exports = {
   calcDuration,
   parseLeaveTime,
   filterGeoCollection,
+  filterGeoCollectionGoogle,
   filterPT,
   filterTaxi,
   kFormatter,

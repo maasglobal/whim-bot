@@ -8,6 +8,8 @@ const request = require('request-promise');
 const WHIM_API_URL = process.env.WHIM_API_URL;
 const WHIM_API_KEY = process.env.WHIM_API_KEY;
 const GOOGLE_API_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
+const GOOGLE_REVERSE_GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
+const GOOGLE_PLACE_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const YELP_API_URL = 'https://api.yelp.com/v3/businesses/search';
 const YELP_APP_ID = process.env.YELP_APP_ID;
@@ -50,40 +52,30 @@ module.exports.login = function (phone, code) {
 };
 
 module.exports.routes = function (from, to, token) {
-  return Promise.all([
-    request.get(WHIM_API_URL + '/routes', {
+  console.log('names', from.name, to.name);
+  
+  console.log(`streetName:${from.addressComponents.streetName}|streetNumber:${from.addressComponents.streetNumber}|city:${from.addressComponents.city}|country:${from.addressComponents.country}`)
+  console.log(`streetName:${to.addressComponents.streetName}|streetNumber:${to.addressComponents.streetNumber}|city:${to.addressComponents.city}|country:${to.addressComponents.country}`)
+  return request.get(WHIM_API_URL + '/routes', {
     qs: {
       from: from.latitude + ',' + from.longitude,
       to: to.latitude + ',' + to.longitude,
+      toAddress: `streetName:${to.addressComponents.streetName}|streetNumber:${to.addressComponents.streetNumber}|city:${to.addressComponents.city}|country:${to.addressComponents.country}`,
+      fromAddress: `streetName:${from.addressComponents.streetName}|streetNumber:${from.addressComponents.streetNumber}|city:${from.addressComponents.city}|country:${from.addressComponents.country}`,
+      toName: to.name,
+      fromName: from.name
     },
     headers: {
       'X-API-Key': WHIM_API_KEY,
       'Authorization': 'Bearer ' + token,
       'Accept': 'application/json;version=3.0.0'
     },
-    json: true
-  }),
-  request.get(WHIM_API_URL + '/routes', {
-    qs: {
-      from: from.latitude + ',' + from.longitude,
-      to: to.latitude + ',' + to.longitude,
-      modes: 'TAXI' // TODO: New API version requires toAddress and fromAddress to get a taxi
-    },
-    headers: {
-      'X-API-Key': WHIM_API_KEY,
-      'Authorization': 'Bearer ' + token,
-      'Accept': 'application/json;version=3.0.0'
-    },
-    json: true
+    json: true,
+    verbose: true
   })
-  ])
-  .then( results => {
-    //console.log('Results from query:', JSON.stringify(results, null, 2))
-    const ret = results[0];
-    if (ret.plan && results[1].plan) {
-      ret.plan.itineraries = ret.plan.itineraries.concat(results[1].plan.itineraries)
-    }
-    return ret;
+  .catch( err => {
+    console.log('ERROR fetching routes', err);
+    return {};
   });
 };
 
@@ -99,21 +91,58 @@ module.exports.favorites = (token) => {
   });
 };
 
-module.exports.reverse = (lat, lon, token) => {
-  return request.get(`${WHIM_API_URL}/geocoding/reverse`, {
-    qs: {
-      lat: lat,
-      lon: lon,
-    },
-    headers: {
-      'X-API-Key': WHIM_API_KEY,
-      'Authorization': 'Bearer ' + token,
-      'Accept': 'application/json;version=3.0.0'
-    },
-    json: true
-  });
+module.exports.reverse = (lat, lng, token, name) => {
+    console.log('reverse geocoding', `${lat}, ${lng}`)
+    return request.get(`${GOOGLE_REVERSE_GEOCODE_URL}`, {
+      qs: {
+        latlng: `${lat}, ${lng}`,
+        key: GOOGLE_API_KEY
+      },
+      headers: {
+        'Accept-Language': 'fi'
+      },
+      json: true,
+      verbose: true
+    })
+    .then( place => {
+      if (!place.results) {
+        return {};
+      }
+      for (const result of place.results) {
+        const addressComponents = {};
+        if (!result.types.find( type => type === 'street_address')) {
+          continue;
+        }
+        const streetName = result.address_components.filter( comp => { return comp.types.find( type => type === 'route' ) } );
+        const streetNumber = result.address_components.filter( comp => { return comp.types.find(type => type === 'street_number') } );
+        const city = result.address_components.filter( comp => { return comp.types.find(type => { return (type === 'locality' || type === 'administrative_area_level_3'); } ) } );
+        const country = result.address_components.filter( comp => { return comp.types.find(type => type === 'country') } );
+        
+        if (streetName && streetName.length) {
+          addressComponents.streetName = streetName[0].long_name;
+        }
+        if (streetNumber && streetNumber.length) {
+          addressComponents.streetNumber = parseInt(streetNumber[0].long_name);
+        } else {
+          addressComponents.streetNumber = 1;
+        }
+        if (city && city.length) {
+          addressComponents.city = city[0].long_name;
+        }
+        if (country) {
+          addressComponents.country = country[0].long_name;
+        }
+        console.log('Components', addressComponents);
+        return {
+          latitude: result.geometry.location.lat,
+          longitude: result.geometry.location.lng,
+          name: name ? name : result.formatted_address,
+          addressComponents
+        }
+      }
+    });
 };
-
+/*
 module.exports.geocode = (text, lat, lon, token) => {
   return request.get(`${WHIM_API_URL}/geocoding`, {
     qs: {
@@ -127,6 +156,28 @@ module.exports.geocode = (text, lat, lon, token) => {
       'Accept': 'application/json;version=3.0.0'
     },
     json: true
+  });
+};*/
+module.exports.geocode = (text, lat, lon, token) => {
+  return request.get(`${GOOGLE_API_URL}`, {
+    qs: {
+      query: text,
+      key: GOOGLE_API_KEY
+    },
+    json: true
+  })
+  .then( response => {
+    for (const item of response.results) {
+      if (item.hasOwnProperty('place_id')) {
+        return module.exports.reverse(item.geometry.location.lat, item.geometry.location.lng, null, item.name)
+      }
+    }
+    console.log('Could not find a place since were here');
+    return {};
+  })
+  .catch( err => {
+    console.error('ERROR', err);
+    return {};
   });
 };
 

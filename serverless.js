@@ -5,7 +5,7 @@
  */
 
 module.exports = function (listener) {
-  console.log('Setting up the mock middleware');
+  //console.log('Setting up the mock middleware');
   return {
     post: function (event, context, callback) {
       var _status = null;

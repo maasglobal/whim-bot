@@ -40,18 +40,28 @@ intents.matches('hello', '/help');
 
 const fetchProfileFavorites = token => {
   return new Promise( (resolve, reject) => {
+    if (!token) {
+      return reject('No token');
+    }
     return requests.favorites(token)
       .then( (res) => {
       console.log('Got favorites', res);
-      const arr = {};
+      const promises = [];
       for (const item of res.profile.favoriteLocations) {
-        arr[item.name] = {
-          latitude: item.lat,
-          longitude: item.lon,
-          name: item.name
-        };
+        promises.push(requests.reverse(item.lat, item.lon, null, item.name));
       }
-      return resolve(arr);
+      Promise.all(promises)
+        .then( results => {
+          const arr = {};
+          for (const item of results) {
+            arr[item.name] = item;
+          }
+          return resolve(arr);
+        });
+    })
+    .catch( err => {
+      console.log('Error fetching', err);
+      return resolve([]);
     });
   });
 }
@@ -65,6 +75,10 @@ bot.dialog('/persistUserData', function (session, data) {
 
 bot.dialog('/cancel', session => {
   session.endConversation();
+});
+
+bot.dialog('/reset', session => {
+  session.userData = {};
 });
 
 bot.dialog('/help', session => {
@@ -86,6 +100,7 @@ const handleAccountLinking = session => {
   } else if (authorizationStatus === 'unlinked') {
     // Remove user from the userData
     delete session.userData.user;
+    session.userData = {};
     session.endDialog('Account unlinked');
   } else {
     session.endDialog('Unknown account linking event received');
@@ -108,8 +123,10 @@ intents.onDefault( session => {
     console.log('Entities received are', entities);
 
     if (entities.length > 0 && entities[0].geo) {
-      const geo = Object.assign({name: 'Pin Location'}, entities[0].geo)
-      session.beginDialog('/options', geo);
+      requests.reverse(entities[0].geo.latitude, entities[0].geo.longitude)
+        .then( result => {
+          session.beginDialog('/options', result);
+        });
       return;
     }
     if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
@@ -157,7 +174,7 @@ bot.dialog('/welcome', function (session) {
 bot.dialog('/geosearch', [
   (session, text) => {
     requests.geocode(text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
-        const location = utils.filterGeoCollection(results);
+        const location = utils.filterGeoCollectionGoogle(results);
         console.log('Results from search are', results, 'filtered as', location);
         if (!location) return Promise.reject('Could not find location');
         const googleURL = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&size=480x480&zoom=12&markers=${location.latitude},${location.longitude}`
@@ -392,6 +409,9 @@ bot.dialog('/location', [
     session.sendTyping();
     if (fromLocation && fromLocation.toLocation) {
         return session.beginDialog('/destination', fromLocation);
+    } 
+    if (!session.userData.user || !session.userData.user.id_token) {
+      return session.endConversation('Error with authentication');
     }
     fetchProfileFavorites(session.userData.user.id_token)
       .then( favorites => {
@@ -409,6 +429,9 @@ bot.dialog('/location', [
       var toLocation = results.response;
       session.dialogData.toLocation = toLocation;
       var fromLocation = session.dialogData.fromLocation;
+      if (!toLocation || !fromLocation) {
+        return session.replaceDialog('/help');
+      }
       session.send(`Searching for routes from ${fromLocation.name} to ${toLocation.name}`);
       session.sendTyping();
       requests.routes(
@@ -469,6 +492,8 @@ bot.dialog('/location', [
             console.log('ERROR booking trip', err, err.stack);
             return session.endDialog('Error booking your trip');
         });
+      } else {
+        session.endDialog('Error booking the trip.');
       }
     } 
     return session.endDialog('Ok. Please throw an another challenge!');
@@ -478,7 +503,11 @@ bot.dialog('/location', [
 
 bot.dialog('/destination', [
   function (session, choices) {
+    console.log('Dialog destination', choices);
     session.dialogData.choices = choices;
+    if (!choices) {
+      return session.endConversation('Missing location?');
+    }
     if (choices.toLocation) {
       console.log('destination had toLocation', choices.toLocation);
       return session.endDialogWithResult({
@@ -502,16 +531,18 @@ bot.dialog('/destination', [
         response: choices[results.response.entity]
       });
     } else if (session.message.entities.length > 0 && session.message.entities[0].geo) {
-      const geo = Object.assign({ name: 'Pin Location' }, session.message.entities[0].geo);
-      session.endDialogWithResult({
-        response: geo
+      requests.reverse(session.message.entities[0].geo.latitude, session.message.entities[0].geo.longitude)
+      .then( geo => {
+        session.endDialogWithResult({ response: geo });
       });
+      //const geo = Object.assign({ name: 'Pin Location' }, session.message.entities[0].geo);
+      
     } else if (session.message.text && session.message.text.length >= MIN_LOCATION_CHARS) {
       console.log('Searching for a place ', session.message.text)
       session.sendTyping();
       return requests.geocode(session.message.text, 60.169, 24.938, session.userData.user.id_token).then( (results) => {
         console.log('Results from search are', results);
-        const location = utils.filterGeoCollection(results);
+        const location = utils.filterGeoCollectionGoogle(results);
         if (!location) {
           console.log('ERROR', err);
           session.send('Did not understand the sent location - please try again');
@@ -607,7 +638,12 @@ module.exports.factors = (event, context, callback) => {
 
 // restify mock for lambda
 module.exports.listener = (event, context, callback) => {
-  console.log('Mock Listener handler called with event', event);
+  //console.log('Mock Listener handler called with event', event);
   const mock = require('./serverless.js')(listener);
-  return mock.post(event, context, callback);
+  try {
+    return mock.post(event, context, callback);
+  } catch (e) {
+    console.log('Caught Error', e);
+    return callback(e, null);
+  }
 }
