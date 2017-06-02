@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "main": "index.js",
   "dependencies": {
-    "botbuilder": "^3.4.4",
-    "request-promise-lite": "^0.8.1",
+    "botbuilder": "^3.5",
+    "request-promise": "^4.2.1",
     "serverless": "^1.8.0"
   },
   "devDependencies": {

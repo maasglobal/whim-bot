@@ -13,7 +13,7 @@ const _ = require('lodash');
 const filterTaxi = (itineraries) => {
   let ret = undefined;
   for (const item of itineraries) {
-    //console.log('Looking for TAXI itinerary', item);
+    //console.log('Looking for TAXI itinerary', item.legs[0]);
     if (item.legs[0].mode === 'TAXI') {
       console.log('Found a TAXI itinerary', item);
       ret = item;
@@ -26,7 +26,7 @@ const filterPT = (itineraries) => {
   let ret = undefined;
   console.log('TODO: filterPT for the best match/score!!');
   for (const item of itineraries) {
-    if (!ret && item.fare.points !== null) {
+    if (!ret && item.fare.amount !== null) {
       ret = item;
     }
   }
@@ -59,6 +59,11 @@ const filterGeoCollection = coll => {
     }
   }
   return null;
+}
+
+const filterGeoCollectionGoogle = coll => {
+  
+  return coll;
 }
 
 const msToTime = duration => {
@@ -137,6 +142,7 @@ module.exports = {
   calcDuration,
   parseLeaveTime,
   filterGeoCollection,
+  filterGeoCollectionGoogle,
   filterPT,
   filterTaxi,
   kFormatter,

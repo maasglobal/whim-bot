@@ -19,12 +19,14 @@ service: whim-bot
 
 provider:
   name: aws
-  runtime: nodejs4.3
+  runtime: nodejs6.10
+  region: eu-west-1
   environment:
     WHIM_API_KEY: ${file(./dev-env.yml):WHIM_API_KEY}
     WHIM_API_URL: ${file(./dev-env.yml):WHIM_API_URL}
     WHIM_BOOKED_PIC: ${file(./dev-env.yml):WHIM_BOOKED_PIC}
     WHIM_BOOKED_URL: ${file(./dev-env.yml):WHIM_BOOKED_URL}
+    GOOGLE_API_KEY: ${file(./dev-env.yml):GOOGLE_API_KEY}
     BOT_FRONTEND_URL: ${file(./dev-env.yml):BOT_FRONTEND_URL}
     BOT_LOGO_URL: ${file(./dev-env.yml):BOT_LOGO_URL}
     MICROSOFT_APP_ID: ${file(./dev-env.yml):MICROSOFT_APP_ID}
