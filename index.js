@@ -68,7 +68,7 @@ const fetchProfileFavorites = token => {
 
 bot.dialog('/', intents);
 
-bot.dialog('/persistUserData', function (session, data) {
+bot.dialog('/persistUserData', (session, data) => {
   session.userData.user = data;
   session.endDialog();
 });
@@ -146,7 +146,7 @@ intents.onDefault( session => {
   }
 });
 
-bot.dialog('/welcome', function (session) {
+bot.dialog('/welcome', (session) => {
   console.log('Welcome presented as', FIRST_FACTOR_URL + '?address=' + JSON.stringify(session.message.address))
   var message = new builder.Message(session)
     .sourceEvent({
@@ -402,7 +402,7 @@ bot.dialog('/food', [
 ])
 
 bot.dialog('/location', [
-  function (session, fromLocation) {
+  (session, fromLocation) => {
     session.dialogData.fromLocation = fromLocation;
     console.log('fromLocation', fromLocation);
     //session.send(`Planning a route from ${fromLocation.name}`);
@@ -423,7 +423,7 @@ bot.dialog('/location', [
         session.endDialog('Had an error while fetching favorites');
       });
   },
-  function (session, results) {
+  (session, results) => {
     console.log('User choice for to-location', results)
     if (results.response) {
       var toLocation = results.response;
@@ -487,7 +487,7 @@ bot.dialog('/location', [
         });
     }
   },
-  function (session, results) {
+  (session, results) => {
     if (results.response) {
       console.log('Response to the session is', results);
       let plan = null;
@@ -522,7 +522,7 @@ bot.dialog('/location', [
 
 
 bot.dialog('/destination', [
-  function (session, choices) {
+  (session, choices) => {
     console.log('Dialog destination', choices);
     session.dialogData.choices = choices;
     if (!choices) {
@@ -543,7 +543,7 @@ bot.dialog('/destination', [
       }
     );
   },
-  function (session, results) {
+  (session, results) => {
     console.log('Destination response', results);
     if (results.response && results.response.entity) {
       var choices = session.dialogData.choices;
@@ -618,7 +618,7 @@ bot.dialog('/destination', [
   }
 ]);
 
-bot.dialog('/logout', function (session) {
+bot.dialog('/logout', (session) => {
   requests.unlink(session.message.address.user.id).then(response => {
       session.endDialog();
     })
