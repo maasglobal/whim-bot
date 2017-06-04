@@ -20,7 +20,7 @@ const WHIM_DEFAULT_HEADERS = {
   'Accept': 'application/json;version=3.0.0'
 }
 
-module.exports.unlink = function (psid) {
+module.exports.unlink = (psid) => {
   return request.post(`https://graph.facebook.com/v2.6/me/unlink_accounts?access_token=${process.env.FB_PAGE_TOKEN}`, {
     method: 'POST',
     form: {
@@ -30,7 +30,7 @@ module.exports.unlink = function (psid) {
   });
 };
 
-module.exports.requestCode = function (phone) {
+module.exports.requestCode = (phone) => {
   return request.get(WHIM_API_URL + '/auth/sms-request-code', {
     qs: {
       phone: phone
@@ -40,7 +40,7 @@ module.exports.requestCode = function (phone) {
   });
 };
 
-module.exports.login = function (phone, code) {
+module.exports.login = (phone, code) => {
   return request.get(WHIM_API_URL + '/auth/sms-login', {
     qs: {
       phone: phone,
@@ -51,7 +51,7 @@ module.exports.login = function (phone, code) {
   });
 };
 
-module.exports.routes = function (from, to, token) {
+module.exports.routes = (from, to, token) => {
   console.log('names', from.name, to.name);
   console.log(`streetName:${from.addressComponents.streetName}|streetNumber:${from.addressComponents.streetNumber}|city:${from.addressComponents.city}|country:${from.addressComponents.country}`)
   console.log(`streetName:${to.addressComponents.streetName}|streetNumber:${to.addressComponents.streetNumber}|city:${to.addressComponents.city}|country:${to.addressComponents.country}`)
